@@ -2,6 +2,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { computed, reactive, ref } from 'vue'
 import type { MusicTrack, Quality, SourceCapabilities } from '../../types/music'
 import { createSourceDocument } from './sourceFrame'
+import { sourceDebug, sourceDebugEnabled, sourceDebugError } from './sourceDebug'
 
 export interface MusicSourceRecord {
   id: string
@@ -59,9 +60,10 @@ function stopRuntime() {
 
 function startRuntime(source: MusicSourceRecord) {
   stopRuntime(); status.value = 'loading'
+  sourceDebug('runtime:start', { id: source.id, name: source.name, version: source.version })
   frame = document.createElement('iframe'); frame.sandbox.add('allow-scripts'); frame.hidden = true
-  frame.srcdoc = createSourceDocument(source); document.body.appendChild(frame)
-  window.setTimeout(() => { if (status.value === 'loading') { status.value = 'error'; error.value = '音源初始化超时' } }, 20_000)
+  frame.srcdoc = createSourceDocument(source, sourceDebugEnabled); document.body.appendChild(frame)
+  window.setTimeout(() => { if (status.value === 'loading') { status.value = 'error'; error.value = '音源初始化超时'; sourceDebugError('runtime:timeout', { name: source.name }) } }, 20_000)
 }
 
 async function selectSource(id: string | null) {
@@ -104,23 +106,25 @@ async function setAllowUpdateAlert(id: string, enable: boolean) {
 window.addEventListener('message', async ({ data, source }) => {
   if (!frame || source !== frame.contentWindow || data?.channel !== 'rubia-source') return
   if (data.type === 'inited') {
-    if (data.data?.status === false) { status.value = 'error'; error.value = data.data.message || '音源初始化失败'; return }
-    capabilities.value = { sources: data.data?.sources ?? {} }; status.value = 'ready'; return
+    if (data.data?.status === false) { status.value = 'error'; error.value = data.data.message || '音源初始化失败'; sourceDebugError('runtime:init-failed', data.data); return }
+    capabilities.value = { sources: data.data?.sources ?? {} }; status.value = 'ready'; sourceDebug('runtime:ready', capabilities.value); return
   }
-  if (data.type === 'init-error') { status.value = 'error'; error.value = data.data.message; return }
+  if (data.type === 'init-error') { status.value = 'error'; error.value = data.data.message; sourceDebugError('runtime:error', data.data); return }
+  if (data.type === 'source-log') { const level = data.data?.level === 'error' ? 'error' : 'debug'; console[level]('[music-source] script', ...(data.data?.args ?? [])); return }
   if (data.type === 'updateAlert' && activeSource.value?.allowShowUpdateAlert) {
     updateNotice.visible = true; updateNotice.name = activeSource.value.name; updateNotice.log = String(data.data?.log ?? '').slice(0, 1024); updateNotice.updateUrl = /^https?:\/\//.test(data.data?.updateUrl) ? data.data.updateUrl : ''; return
   }
   if (data.type === 'source-response') {
     const pending = requests.get(data.data.id); if (!pending) return
     clearTimeout(pending.timer); requests.delete(data.data.id)
-    data.data.error ? pending.reject(new Error(data.data.error)) : pending.resolve(data.data.result); return
+    if (data.data.error) { sourceDebugError('action:failed', data.data); pending.reject(new Error(data.data.error)) } else { sourceDebug('action:resolved', { id: data.data.id, result: data.data.result }); pending.resolve(data.data.result) } return
   }
   if (data.type === 'http-request') {
     const { id, url, options } = data.data
     const body = options.body ?? (options.form ? new URLSearchParams(options.form).toString() : undefined)
-    try { const response = await invoke('source_http_request', { request: { url, method: options.method || 'GET', headers: options.headers || {}, body, timeoutMs: options.timeout } }); send('http-response', { id, response }) }
-    catch (requestError) { send('http-response', { id, error: String(requestError) }) }
+    sourceDebug('http:request', { id, method: options.method || 'GET', url, headerNames: Object.keys(options.headers || {}), bodyBytes: body?.length ?? 0 })
+    try { const response = await invoke<{ statusCode: number; statusMessage: string; body: string; bytes: number }>('source_http_request', { request: { url, method: options.method || 'GET', headers: options.headers || {}, body, timeoutMs: options.timeout } }); sourceDebug('http:response', { id, url, status: response.statusCode, statusMessage: response.statusMessage, bytes: response.bytes, body: response.body.slice(0, 500) }); send('http-response', { id, response }) }
+    catch (requestError) { sourceDebugError('http:failed', { id, url, error: String(requestError) }); send('http-response', { id, error: String(requestError) }) }
   }
 })
 
@@ -137,6 +141,7 @@ void initialize()
 function canResolve(source: string, quality: Quality) { const info = capabilities.value?.sources?.[source]; return status.value === 'ready' && !!info?.actions.includes('musicUrl') && info.qualitys.includes(quality) }
 function resolveMusicUrl(track: MusicTrack, quality: Quality) {
   const id = `request_${++sequence}`
+  sourceDebug('action:musicUrl', { id, sourceName: sourceName.value, track: { id: track.id, source: track.source, name: track.name }, quality })
   return new Promise<string>((resolve, reject) => { const timer = window.setTimeout(() => { requests.delete(id); reject(new Error('自定义源请求超时')) }, 20_000); requests.set(id, { resolve, reject, timer }); send('source-request', { id, request: { source: track.source, action: 'musicUrl', info: { type: quality, musicInfo: legacyMusicInfo(track) } } }) })
     .then(url => { if (typeof url !== 'string' || url.length > 2048 || !/^https?:/.test(url)) throw new Error('自定义源返回了无效地址'); return url })
 }

@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+import ArtworkImage from '../../components/ArtworkImage.vue'
 import { searchMusic } from '../../services/musicApi'
 import type { MusicTrack } from '../../types/music'
 import { usePlayer } from '../player/playerStore'
@@ -20,7 +21,7 @@ const formatDuration = (s: number) => `${Math.floor(s / 60)}:${Math.floor(s % 60
       <div v-else class="track-table">
         <div class="track table-head"><span>#</span><span>歌曲</span><span>专辑</span><span>音质</span><span>时长</span></div>
         <button v-for="(track,index) in results" :key="track.source+track.id" class="track" :class="{ playing: player.state.current?.id === track.id }" @dblclick="player.play(track, results)">
-          <span class="index">{{ index + 1 }}</span><span class="song"><i>♫</i><span><strong>{{ track.name }}</strong><small>{{ track.artist }}</small></span></span><span class="album">{{ track.album || '未知专辑' }}</span><span><b class="quality">{{ track.qualities[0] || '128k' }}</b></span><span>{{ formatDuration(track.durationSeconds) }}</span><span class="row-play" @click.stop="player.play(track, results)">▶</span>
+          <span class="index">{{ index + 1 }}</span><span class="song"><ArtworkImage :src="track.artworkUrl" :alt="`${track.name} 封面`"/><span><strong>{{ track.name }}</strong><small>{{ track.artist }}</small></span></span><span class="album">{{ track.album || '未知专辑' }}</span><span><b class="quality">{{ track.qualities[0] || '128k' }}</b></span><span>{{ formatDuration(track.durationSeconds) }}</span><span class="row-play" @click.stop="player.play(track, results)">▶</span>
         </button>
       </div>
     </div>

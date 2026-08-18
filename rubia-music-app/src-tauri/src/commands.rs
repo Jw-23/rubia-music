@@ -3,6 +3,14 @@ use reqwest::{Client, Method};
 use std::{collections::HashMap, time::Duration};
 use tauri::{AppHandle, Manager, State};
 
+pub struct SourceHttpClient(pub Client);
+
+impl SourceHttpClient {
+    pub fn new() -> Self {
+        Self(Client::builder().build().expect("failed to create source HTTP client"))
+    }
+}
+
 #[tauri::command]
 pub async fn search_music(query: String, page: Option<u32>, limit: Option<u32>, providers: State<'_, ProviderRegistry>) -> Result<Vec<MusicTrack>, String> {
     let query = query.trim();
@@ -16,19 +24,27 @@ pub async fn resolve_music_url(track: MusicTrack, quality: Option<String>, provi
 }
 
 #[tauri::command]
-pub async fn source_http_request(request: SourceHttpRequest) -> Result<SourceHttpResponse, String> {
+pub async fn source_http_request(request: SourceHttpRequest, client: State<'_, SourceHttpClient>) -> Result<SourceHttpResponse, String> {
     let timeout = request.timeout_ms.unwrap_or(60_000).clamp(100, 60_000);
-    let client = Client::builder().timeout(Duration::from_millis(timeout)).build().map_err(|e| e.to_string())?;
+    tracing::debug!(target: "rubia_music_app::music_source", method = %request.method, url = %request.url, timeout_ms = timeout, "sending source HTTP request");
     let method = Method::from_bytes(request.method.to_uppercase().as_bytes()).map_err(|_| "无效的 HTTP 方法".to_string())?;
-    let mut builder = client.request(method, &request.url);
+    let mut builder = client.0.request(method, &request.url).timeout(Duration::from_millis(timeout));
     for (name, value) in request.headers { builder = builder.header(name, value); }
     if let Some(body) = request.body { builder = builder.body(body); }
-    let response = builder.send().await.map_err(|e| e.to_string())?;
+    let response = builder.send().await.map_err(|e| {
+        tracing::error!(target: "rubia_music_app::music_source", error = ?e, "source HTTP transport failed");
+        e.to_string()
+    })?;
     let status = response.status();
     let headers: HashMap<_, _> = response.headers().iter().filter_map(|(key, value)| value.to_str().ok().map(|v| (key.to_string(), v.to_owned()))).collect();
     let raw = response.bytes().await.map_err(|e| e.to_string())?.to_vec();
     let body = String::from_utf8_lossy(&raw).into_owned();
     let bytes = raw.len();
+    if status.is_success() {
+        tracing::debug!(target: "rubia_music_app::music_source", status = status.as_u16(), bytes, "source HTTP request completed");
+    } else {
+        tracing::warn!(target: "rubia_music_app::music_source", status = status.as_u16(), bytes, response_body = %body.chars().take(500).collect::<String>(), "source HTTP returned an error status");
+    }
     Ok(SourceHttpResponse { status_code: status.as_u16(), status_message: status.canonical_reason().unwrap_or_default().into(), headers, body, bytes, raw })
 }
 

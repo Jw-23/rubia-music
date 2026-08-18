@@ -5,7 +5,7 @@ import type { MusicSourceRecord } from './useSourceRuntime'
 
 const safeScript = (script: string) => script.replace(/<\/script/gi, '<\\/script')
 
-export const createSourceDocument = (source: MusicSourceRecord) => {
+export const createSourceDocument = (source: MusicSourceRecord, debug = false) => {
   const encoded = btoa(unescape(encodeURIComponent(source.script)))
   const scriptInfo = JSON.stringify({ name: source.name, description: source.description, version: source.version, author: source.author, homepage: source.homepage, rawScript: source.script }).replace(/<\/script/gi, '<\\/script')
   return `<!doctype html><meta charset="utf-8"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline' 'unsafe-eval'">
@@ -13,6 +13,9 @@ export const createSourceDocument = (source: MusicSourceRecord) => {
 <script>(() => {
   const handlers = {}; const callbacks = new Map(); let sequence = 0;
   const post = (type, data) => parent.postMessage({ channel: 'rubia-source', type, data }, '*');
+  const debug = ${JSON.stringify(debug)};
+  const describe = value => { try { if (value instanceof Error) return { name: value.name, message: value.message, stack: value.stack }; if (typeof value === 'string') return value; return JSON.parse(JSON.stringify(value)); } catch (_) { return String(value); } };
+  if (debug) for (const level of ['debug', 'info', 'warn', 'error']) { const original = console[level].bind(console); console[level] = (...args) => { original(...args); post('source-log', { level, args: args.map(describe) }); }; }
   const toBytes = value => {
     if (value instanceof Uint8Array) return value;
     if (value instanceof ArrayBuffer) return new Uint8Array(value);
@@ -44,10 +47,12 @@ export const createSourceDocument = (source: MusicSourceRecord) => {
       zlib: { inflate(value) { return Promise.resolve(buffer(pako.inflate(toBytes(value)))); }, deflate(value) { return Promise.resolve(buffer(pako.deflate(toBytes(value)))); } }
     }
   };
+  addEventListener('error', event => post('init-error', { message: event.message || '音源脚本执行失败', stack: event.error?.stack }));
+  addEventListener('unhandledrejection', event => { const reason = event.reason; post('init-error', { message: reason?.message || String(reason || '音源初始化失败'), stack: reason?.stack }); });
   addEventListener('message', async ({ data }) => {
     if (data?.channel !== 'rubia-host') return;
     if (data.type === 'http-response') { const cb = callbacks.get(data.data.id); if (!cb) return; callbacks.delete(data.data.id); if (data.data.error) cb(new Error(data.data.error), null, null); else { const response = data.data.response; response.raw = buffer(response.raw); try { response.body = JSON.parse(response.body); } catch (_) {} cb(null, response, response.body); } }
-    if (data.type === 'source-request') { const { id, request } = data.data; try { if (!handlers.request) throw new Error('Request event is not defined'); post('source-response', { id, result: await handlers.request(request) }); } catch (error) { post('source-response', { id, error: error?.message || String(error) }); } }
+    if (data.type === 'source-request') { const { id, request } = data.data; try { if (!handlers.request) throw new Error('Request event is not defined'); post('source-response', { id, result: await handlers.request(request) }); } catch (error) { post('source-response', { id, error: error?.message || String(error), stack: error?.stack }); } }
   });
   try { (0, eval)(decodeURIComponent(escape(atob('${encoded}')))); } catch (error) { post('init-error', { message: error?.message || String(error) }); }
 })();<\/script>`

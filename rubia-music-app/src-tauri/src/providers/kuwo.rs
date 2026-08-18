@@ -27,7 +27,15 @@ impl KuwoProvider {
             .error_for_status().map_err(network_error)?
             .json().await.map_err(network_error)?;
         let items = body.get("abslist").and_then(Value::as_array).cloned().unwrap_or_default();
-        Ok(items.into_iter().filter_map(parse_track).collect())
+        let tracks: Vec<_> = items.into_iter().filter_map(parse_track).collect();
+        tracing::debug!(
+            target: "rubia_music_app::artwork",
+            tracks = tracks.len(),
+            with_artwork = tracks.iter().filter(|track| track.artwork_url.is_some()).count(),
+            first_artwork = ?tracks.first().and_then(|track| track.artwork_url.as_deref()),
+            "parsed search artwork"
+        );
+        Ok(tracks)
     }
 
     pub async fn resolve_url(&self, track: &MusicTrack, quality: &str) -> Result<String, String> {
@@ -56,6 +64,18 @@ fn text(value: &Value, key: &str) -> String {
         .replace("&amp;", "&").replace("&quot;", "\"").replace("&#39;", "'")
 }
 
+fn artwork_url(value: &Value) -> Option<String> {
+    let path = text(value, "web_albumpic_short");
+    if path.is_empty() { return None; }
+    // Kuwo prefixes this field with its original size (for example `120/`).
+    // Replace that segment instead of appending another size directory.
+    let normalized = path.split_once('/')
+        .filter(|(size, _)| size.chars().all(|character| character.is_ascii_digit()))
+        .map(|(_, rest)| rest)
+        .unwrap_or(path.as_str());
+    Some(format!("https://img1.kuwo.cn/star/albumcover/500/{normalized}"))
+}
+
 fn parse_track(value: Value) -> Option<MusicTrack> {
     let id = text(&value, "MUSICRID").replace("MUSIC_", "");
     if id.is_empty() { return None; }
@@ -66,6 +86,7 @@ fn parse_track(value: Value) -> Option<MusicTrack> {
         if quality_info.contains(needle) { qualities.push(quality.to_owned()); }
     }
     if qualities.is_empty() { qualities.push("128k".into()); }
+    let artwork_url = artwork_url(&value);
     Some(MusicTrack {
         id: id.clone(),
         name: text(&value, "SONGNAME"),
@@ -73,12 +94,13 @@ fn parse_track(value: Value) -> Option<MusicTrack> {
         album: text(&value, "ALBUM"),
         duration_seconds,
         source: "kw".into(),
-        artwork_url: None,
+        artwork_url: artwork_url.clone(),
         qualities,
         source_data: json!({
             "songmid": id,
             "albumId": text(&value, "ALBUMID"),
             "albumName": text(&value, "ALBUM"),
+            "picUrl": artwork_url,
         }),
     })
 }
