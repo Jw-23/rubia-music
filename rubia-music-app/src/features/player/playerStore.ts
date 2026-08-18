@@ -1,18 +1,20 @@
-import { computed, reactive } from 'vue'
+import { computed, reactive, watch } from 'vue'
 import type { MusicTrack } from '../../types/music'
 import { resolveBuiltinUrl } from '../../services/musicApi'
 import { useSourceRuntime } from '../sources/useSourceRuntime'
 import { sourceDebug, sourceDebugError } from '../sources/sourceDebug'
 import { selectSourceQuality, selectTrackQuality } from './qualityPreference'
 import { useLibrary } from '../library/libraryStore'
+import { appSettings } from '../settings/appSettings'
 
 const audio = new Audio()
-const state = reactive({ current: null as MusicTrack | null, queue: [] as MusicTrack[], playing: false, loading: false, currentTime: 0, duration: 0, volume: 0.82, error: '' })
+const state = reactive({ current: null as MusicTrack | null, queue: [] as MusicTrack[], playing: false, loading: false, currentTime: 0, duration: 0, volume: appSettings.volume, error: '' })
 let customLoadInProgress = false
 let fallbackInProgress = false
 let playSequence = 0
 const isPreviewDuration = (track: MusicTrack) => Number.isFinite(audio.duration) && audio.duration > 0 && track.durationSeconds >= 60 && audio.duration < Math.min(30, track.durationSeconds * 0.5)
 audio.volume = state.volume
+watch(() => appSettings.volume, value => { state.volume = value; audio.volume = value })
 audio.addEventListener('timeupdate', () => { state.currentTime = audio.currentTime })
 audio.addEventListener('durationchange', () => { state.duration = Number.isFinite(audio.duration) ? audio.duration : 0 })
 audio.addEventListener('play', () => { state.playing = true })
@@ -46,7 +48,7 @@ async function play(track: MusicTrack, queue?: MusicTrack[]) {
     try { audio.src = url; await audio.play(); customLoadInProgress = false; useLibrary().recordRecent(track) }
     catch (playError) {
       customLoadInProgress = false
-      const canFallback = !!sourceQuality && (playError instanceof DOMException ? playError.name === 'NotSupportedError' : audio.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED)
+      const canFallback = appSettings.fallbackToBuiltin && !!sourceQuality && (playError instanceof DOMException ? playError.name === 'NotSupportedError' : audio.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED)
       if (!canFallback) throw playError
       if (playId !== playSequence) { sourceDebug('player:stale-request', { playId, track: { id: track.id, name: track.name }, stage: 'custom-url-failed' }); return }
       sourceDebugError('player:custom-url-unusable', { sourceName: runtime.sourceName.value, url, mediaErrorCode: audio.error?.code, error: playError })
@@ -73,5 +75,5 @@ async function play(track: MusicTrack, queue?: MusicTrack[]) {
 async function toggle() { if (!state.current) return; if (audio.paused) await audio.play(); else audio.pause() }
 async function playNext() { if (!state.current) return; const index = state.queue.findIndex(t => t.id === state.current?.id && t.source === state.current?.source); const next = state.queue[index + 1]; if (next) await play(next) }
 function seek(seconds: number) { audio.currentTime = seconds }
-function setVolume(value: number) { state.volume = value; audio.volume = value }
+function setVolume(value: number) { state.volume = value; audio.volume = value; appSettings.volume = value }
 export function usePlayer() { return { state, progress: computed(() => state.duration ? state.currentTime / state.duration : 0), play, toggle, playNext, seek, setVolume } }

@@ -4,6 +4,7 @@ import ArtworkImage from '../../components/ArtworkImage.vue'
 import { getMusicLyrics } from '../../services/musicApi'
 import type { LyricLine } from '../../types/music'
 import { usePlayer } from '../player/playerStore'
+import { appSettings } from '../settings/appSettings'
 
 const player = usePlayer()
 const lines = ref<LyricLine[]>([])
@@ -37,6 +38,7 @@ const animateToLine = (index: number) => {
   const start = container.scrollTop
   const target = Math.max(0, line.offsetTop - container.clientHeight / 2 + line.offsetHeight / 2)
   const distance = target - start
+  if (!appSettings.smoothLyrics) { container.scrollTop = target; return }
   const duration = Math.min(900, Math.max(480, Math.abs(distance) * 0.7))
   const startedAt = performance.now()
   const step = (now: number) => {
@@ -76,12 +78,12 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancel
     <section class="lyrics-screen">
       <div class="lyrics-backdrop" :style="player.state.current?.artworkUrl ? { backgroundImage: `url(${player.state.current.artworkUrl})` } : {}" />
       <header class="lyrics-header" data-tauri-drag-region><button title="关闭歌词" aria-label="关闭歌词" @click="emitClose"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button><strong data-tauri-drag-region>正在播放</strong><span data-tauri-drag-region /></header>
-      <div class="lyrics-layout">
-        <aside class="lyrics-album">
+      <div class="lyrics-layout" :class="{ 'no-artwork': !appSettings.showLyricArtwork }">
+        <aside v-if="appSettings.showLyricArtwork" class="lyrics-album">
           <ArtworkImage :src="player.state.current?.artworkUrl" :alt="player.state.current?.name" size="player" />
           <h1>{{ player.state.current?.name }}</h1><p>{{ player.state.current?.artist }}</p><small>{{ player.state.current?.album }}</small>
         </aside>
-        <main ref="scrollContainer" class="lyrics-scroll">
+        <main ref="scrollContainer" class="lyrics-scroll" :style="{ '--lyric-size': `${appSettings.lyricFontSize}px` }">
           <div v-if="loading" class="lyrics-message">正在加载歌词…</div>
           <div v-else-if="error" class="lyrics-message">{{ error }}</div>
           <button v-for="(line, index) in lines" :key="`${line.timeSeconds}-${index}`" :ref="element => setLineElement(element, index)" class="lyric-line" :class="{ active: index === activeIndex }" @click="jumpTo(line)">{{ line.text }}</button>
@@ -100,7 +102,8 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancel
 .lyrics-header { padding-left: 86px; }
 .lyrics-header button { display: grid; place-items: center; padding: 0; line-height: 0; }
 .lyrics-header button svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.lyric-line { transform-origin: left center; transition: color .42s ease, opacity .42s ease, transform .55s cubic-bezier(.2,.8,.2,1), font-size .42s cubic-bezier(.2,.8,.2,1), filter .42s ease; }
+.lyric-line { font-size: var(--lyric-size); transform-origin: left center; transition: color .42s ease, opacity .42s ease, transform .55s cubic-bezier(.2,.8,.2,1), font-size .42s cubic-bezier(.2,.8,.2,1), filter .42s ease; }
 .lyric-line:not(.active) { opacity: .68; }
 .lyric-line.active { transform: translateX(10px) scale(1.025); filter: drop-shadow(0 8px 18px rgba(0,0,0,.28)); }
+.lyrics-layout.no-artwork { grid-template-columns: minmax(0, 760px); justify-content: center; }
 </style>

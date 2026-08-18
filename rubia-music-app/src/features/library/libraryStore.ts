@@ -22,10 +22,11 @@ function removeFromPlaylist(track: MusicTrack) { data.value.playlist = data.valu
 function recordRecent(track: MusicTrack) {
   data.value.recent = [track, ...data.value.recent.filter(item => trackKey(item) !== trackKey(track))].slice(0, 100)
 }
+function clearLibrary() { data.value = empty() }
 
 export function useLibrary() {
   return {
     favorites: computed(() => data.value.favorites), recent: computed(() => data.value.recent), playlist: computed(() => data.value.playlist),
-    isFavorite: (track: MusicTrack) => contains(data.value.favorites, track), toggleFavorite, addToPlaylist, removeFromPlaylist, recordRecent,
+    isFavorite: (track: MusicTrack) => contains(data.value.favorites, track), toggleFavorite, addToPlaylist, removeFromPlaylist, recordRecent, clearLibrary,
   }
 }
