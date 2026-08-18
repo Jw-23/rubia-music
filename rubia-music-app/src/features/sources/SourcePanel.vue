@@ -31,7 +31,6 @@ async function remove(id: string, name: string) { if (confirm(`确定删除音�
 </script>
 
 <template>
-  <button class="source-trigger" title="音源设置" @click="sourceSettingsOpen=true">⚙</button>
   <div v-if="sourceSettingsOpen" class="modal-backdrop" @click.self="sourceSettingsOpen=false">
     <section class="settings-modal">
       <aside class="settings-nav"><h2>设置</h2><button :class="{ active: activeSection === 'general' }" @click="activeSection='general'"><span>⚙</span>通用</button><button :class="{ active: activeSection === 'playback' }" @click="activeSection='playback'"><span>▶</span>播放</button><button :class="{ active: activeSection === 'lyrics' }" @click="activeSection='lyrics'"><span>≋</span>歌词</button><button :class="{ active: activeSection === 'source' }" @click="activeSection='source'"><span>⌁</span>音乐来源</button><button :class="{ active: activeSection === 'data' }" @click="activeSection='data'"><span>▣</span>数据</button></aside>

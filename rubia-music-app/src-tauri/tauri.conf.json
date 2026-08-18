@@ -15,8 +15,8 @@
         "title": "Rubia Music",
         "width": 1180,
         "height": 760,
-        "minWidth": 760,
-        "minHeight": 560,
+        "minWidth": 560,
+        "minHeight": 480,
         "titleBarStyle": "Overlay",
         "hiddenTitle": true
       }
