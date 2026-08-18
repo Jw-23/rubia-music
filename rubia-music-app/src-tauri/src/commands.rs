@@ -1,4 +1,4 @@
-use crate::{domain::{MusicTrack, SourceHttpRequest, SourceHttpResponse}, providers::ProviderRegistry};
+use crate::{domain::{LyricLine, MusicTrack, SourceHttpRequest, SourceHttpResponse}, providers::ProviderRegistry};
 use reqwest::{Client, Method};
 use std::{collections::HashMap, time::Duration};
 use tauri::{AppHandle, Manager, State};
@@ -21,6 +21,11 @@ pub async fn search_music(query: String, page: Option<u32>, limit: Option<u32>, 
 #[tauri::command]
 pub async fn resolve_music_url(track: MusicTrack, quality: Option<String>, providers: State<'_, ProviderRegistry>) -> Result<String, String> {
     providers.resolve_url(&track, quality.as_deref().unwrap_or("320k")).await
+}
+
+#[tauri::command]
+pub async fn get_music_lyrics(track: MusicTrack, providers: State<'_, ProviderRegistry>) -> Result<Vec<LyricLine>, String> {
+    providers.lyrics(&track).await
 }
 
 #[tauri::command]

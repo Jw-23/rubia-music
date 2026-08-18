@@ -30,6 +30,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::search_music,
             commands::resolve_music_url,
+            commands::get_music_lyrics,
             commands::source_http_request,
             commands::load_source_settings,
             commands::save_source_settings,

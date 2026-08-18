@@ -1,4 +1,4 @@
-use crate::domain::MusicTrack;
+use crate::domain::{LyricLine, MusicTrack};
 use reqwest::Client;
 use serde_json::{json, Value};
 use std::time::Duration;
@@ -54,6 +54,25 @@ impl KuwoProvider {
             .json().await.map_err(network_error)?;
         value.get("url").and_then(Value::as_str).filter(|url| url.starts_with("http"))
             .map(str::to_owned).ok_or_else(|| "平台没有返回可播放地址，请导入自定义源".into())
+    }
+
+    pub async fn lyrics(&self, track: &MusicTrack) -> Result<Vec<LyricLine>, String> {
+        let url = format!(
+            "http://m.kuwo.cn/newh5/singles/songinfoandlrc?musicId={}",
+            urlencoding::encode(&track.id)
+        );
+        let body: Value = self.client.get(url).send().await.map_err(network_error)?
+            .error_for_status().map_err(network_error)?
+            .json().await.map_err(network_error)?;
+        let lines = body.pointer("/data/lrclist").and_then(Value::as_array)
+            .ok_or_else(|| "平台没有返回歌词".to_string())?;
+        let mut lyrics: Vec<_> = lines.iter().filter_map(|line| {
+            let text = line.get("lineLyric")?.as_str()?.trim();
+            let time_seconds = line.get("time")?.as_str()?.parse::<f64>().ok()?;
+            (!text.is_empty()).then(|| LyricLine { time_seconds, text: text.to_owned() })
+        }).collect();
+        lyrics.sort_by(|left, right| left.time_seconds.total_cmp(&right.time_seconds));
+        if lyrics.is_empty() { Err("暂无歌词".into()) } else { Ok(lyrics) }
     }
 }
 

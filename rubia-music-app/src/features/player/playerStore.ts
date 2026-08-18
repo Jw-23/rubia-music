@@ -7,6 +7,8 @@ import { selectSourceQuality, selectTrackQuality } from './qualityPreference'
 
 const audio = new Audio()
 const state = reactive({ current: null as MusicTrack | null, queue: [] as MusicTrack[], playing: false, loading: false, currentTime: 0, duration: 0, volume: 0.82, error: '' })
+let customLoadInProgress = false
+let fallbackInProgress = false
 audio.volume = state.volume
 audio.addEventListener('timeupdate', () => { state.currentTime = audio.currentTime })
 audio.addEventListener('durationchange', () => { state.duration = Number.isFinite(audio.duration) ? audio.duration : 0 })
@@ -15,8 +17,9 @@ audio.addEventListener('pause', () => { state.playing = false })
 audio.addEventListener('ended', () => void playNext())
 audio.addEventListener('error', () => {
   const mediaError = audio.error
-  state.error = '音频加载失败，可以刷新地址或更换自定义源。'; state.loading = false
-  sourceDebugError('player:media-error', { code: mediaError?.code, message: mediaError?.message, currentSrc: audio.currentSrc, networkState: audio.networkState, readyState: audio.readyState })
+  const recoverable = customLoadInProgress || fallbackInProgress
+  if (!recoverable) { state.error = '音频加载失败，可以刷新地址或更换自定义源。'; state.loading = false }
+  sourceDebugError('player:media-error', { code: mediaError?.code, message: mediaError?.message, currentSrc: audio.currentSrc, networkState: audio.networkState, readyState: audio.readyState, recoverable })
 })
 async function play(track: MusicTrack, queue?: MusicTrack[]) {
   state.loading = true; state.error = ''; state.current = track; if (queue) state.queue = queue
@@ -33,9 +36,23 @@ async function play(track: MusicTrack, queue?: MusicTrack[]) {
     if (hasCustomSource && !sourceQuality) throw new Error(`自定义源「${runtime.sourceName.value}」不支持 ${track.source} 或当前歌曲音质`)
     const url = sourceQuality ? await runtime.resolveMusicUrl(track, sourceQuality) : await resolveBuiltinUrl(track, quality)
     sourceDebug('player:load', { track: { id: track.id, source: track.source, name: track.name }, quality, customSource: sourceQuality ? runtime.sourceName.value : null, url })
-    audio.src = url; await audio.play()
+    customLoadInProgress = !!sourceQuality
+    try { audio.src = url; await audio.play(); customLoadInProgress = false }
+    catch (playError) {
+      customLoadInProgress = false
+      const canFallback = !!sourceQuality && (playError instanceof DOMException ? playError.name === 'NotSupportedError' : audio.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED)
+      if (!canFallback) throw playError
+      sourceDebugError('player:custom-url-unusable', { sourceName: runtime.sourceName.value, url, mediaErrorCode: audio.error?.code, error: playError })
+      fallbackInProgress = true
+      audio.pause(); audio.removeAttribute('src'); audio.load(); state.error = ''
+      const fallbackUrl = await resolveBuiltinUrl(track, quality)
+      sourceDebug('player:builtin-fallback', { reason: 'custom source returned an unloadable URL', track: { id: track.id, source: track.source, name: track.name }, quality, url: fallbackUrl })
+      audio.src = fallbackUrl; await audio.play()
+      fallbackInProgress = false; state.error = ''
+      sourceDebug('player:fallback-playing', { track: { id: track.id, source: track.source, name: track.name }, currentSrc: audio.currentSrc, readyState: audio.readyState })
+    }
   }
-  catch (error) { state.error = error instanceof Error ? error.message : String(error); sourceDebugError('player:failed', { message: state.error, error }) }
+  catch (error) { customLoadInProgress = false; fallbackInProgress = false; state.error = error instanceof Error ? error.message : String(error); sourceDebugError('player:failed', { message: state.error, error }) }
   finally { state.loading = false }
 }
 async function toggle() { if (!state.current) return; if (audio.paused) await audio.play(); else audio.pause() }
