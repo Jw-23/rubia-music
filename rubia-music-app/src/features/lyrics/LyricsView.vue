@@ -112,11 +112,11 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancel
 .lyrics-header button svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .lyric-line { position: relative; isolation: isolate; font-size: var(--lyric-size); transform-origin: left center; transition: color .42s ease, opacity .42s ease, transform .55s cubic-bezier(.2,.8,.2,1), font-size .42s cubic-bezier(.2,.8,.2,1), filter .42s ease; }
 .lyric-base { display: block; color: #ffffff63; transition: color .42s ease; }
-.lyric-fill { position: absolute; inset: 12px 0; display: block; overflow: hidden; color: #ff5575; pointer-events: none; clip-path: inset(0 calc(100% - var(--lyric-progress)) 0 0); transition: clip-path .16s linear, color .42s ease; text-shadow: 0 3px 18px rgba(255,44,84,.3); }
+.lyric-fill { position: absolute; inset: 12px 0; display: block; overflow: hidden; color: #ff5575; pointer-events: none; clip-path: inset(0 calc(100% - var(--lyric-progress)) 0 0); transition: clip-path .16s linear, color .42s ease; text-shadow: none; }
 .lyric-line:not(.active) { opacity: .68; }
 .lyric-line.played .lyric-fill { color: #ffffffa8; text-shadow: none; }
-.lyric-line.active { color: transparent; transform: translateX(10px) scale(1.025); filter: drop-shadow(0 8px 18px rgba(0,0,0,.28)); }
+.lyric-line.active { color: transparent; transform: translateX(10px) scale(1.025); filter: none; text-shadow: none; }
 .lyric-line.active .lyric-base { color: #ffffff52; }
-.lyric-line.active .lyric-fill { color: #ff5a79; text-shadow: 0 4px 24px rgba(255,43,82,.42); }
+.lyric-line.active .lyric-fill { color: #ff5a79; text-shadow: none; }
 .lyrics-layout.no-artwork { grid-template-columns: minmax(0, 760px); justify-content: center; }
 </style>
