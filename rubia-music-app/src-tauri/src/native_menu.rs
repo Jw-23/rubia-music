@@ -50,14 +50,15 @@ fn file_menu(app: &App) -> tauri::Result<Submenu<tauri::Wry>> {
 }
 
 pub fn build(app: &App) -> tauri::Result<Menu<tauri::Wry>> {
-    let play_pause = item(app, "play-pause", "播放或暂停", "Space")?;
+    // Avoid binding bare Space globally: it would prevent typing spaces in search fields.
+    let play_pause = item(app, "play-pause", "播放或暂停", "CmdOrCtrl+P")?;
     let next = item(app, "play-next", "下一首", "CmdOrCtrl+Right")?;
     let home = item(app, "view-home", "首页", "CmdOrCtrl+1")?;
     let search = item(app, "view-search", "搜索", "CmdOrCtrl+F")?;
     let favorites = item(app, "view-favorites", "收藏", "CmdOrCtrl+2")?;
     let playlists = item(app, "view-playlists", "歌单", "CmdOrCtrl+3")?;
     let recent = item(app, "view-recent", "最近播放", "CmdOrCtrl+4")?;
-    let help = item(app, "open-help", "Rubia Music 帮助", "CmdOrCtrl+?")?;
+    let help = item(app, "open-help", "音乐源使用帮助", "F1")?;
 
     let edit = SubmenuBuilder::new(app, "编辑")
         .undo_with_text("撤销")

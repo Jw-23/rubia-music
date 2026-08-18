@@ -21,6 +21,14 @@ const activeIndex = computed(() => {
   }
   return index
 })
+const lyricProgress = (index: number) => {
+  if (index < activeIndex.value) return 100
+  if (index !== activeIndex.value) return 0
+  const start = lines.value[index]?.timeSeconds ?? 0
+  const next = lines.value[index + 1]?.timeSeconds
+  const end = next && next > start ? next : Math.max(start + 3, player.state.duration || start + 6)
+  return Math.min(100, Math.max(0, ((player.state.currentTime - start) / (end - start)) * 100))
+}
 
 watch(() => player.state.current, async track => {
   lines.value = []; error.value = ''
@@ -86,7 +94,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancel
         <main ref="scrollContainer" class="lyrics-scroll" :style="{ '--lyric-size': `${appSettings.lyricFontSize}px` }">
           <div v-if="loading" class="lyrics-message">正在加载歌词…</div>
           <div v-else-if="error" class="lyrics-message">{{ error }}</div>
-          <button v-for="(line, index) in lines" :key="`${line.timeSeconds}-${index}`" :ref="element => setLineElement(element, index)" class="lyric-line" :class="{ active: index === activeIndex }" @click="jumpTo(line)">{{ line.text }}</button>
+          <button v-for="(line, index) in lines" :key="`${line.timeSeconds}-${index}`" :ref="element => setLineElement(element, index)" class="lyric-line" :class="{ active: index === activeIndex, played: index < activeIndex }" :style="{ '--lyric-progress': `${lyricProgress(index)}%` }" @click="jumpTo(line)"><span class="lyric-base">{{ line.text }}</span><span class="lyric-fill" aria-hidden="true">{{ line.text }}</span></button>
         </main>
       </div>
       <footer class="lyrics-player">
@@ -102,8 +110,13 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancel
 .lyrics-header { padding-left: 86px; }
 .lyrics-header button { display: grid; place-items: center; padding: 0; line-height: 0; }
 .lyrics-header button svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
-.lyric-line { font-size: var(--lyric-size); transform-origin: left center; transition: color .42s ease, opacity .42s ease, transform .55s cubic-bezier(.2,.8,.2,1), font-size .42s cubic-bezier(.2,.8,.2,1), filter .42s ease; }
+.lyric-line { position: relative; isolation: isolate; font-size: var(--lyric-size); transform-origin: left center; transition: color .42s ease, opacity .42s ease, transform .55s cubic-bezier(.2,.8,.2,1), font-size .42s cubic-bezier(.2,.8,.2,1), filter .42s ease; }
+.lyric-base { display: block; color: #ffffff63; transition: color .42s ease; }
+.lyric-fill { position: absolute; inset: 12px 0; display: block; overflow: hidden; color: #ff5575; pointer-events: none; clip-path: inset(0 calc(100% - var(--lyric-progress)) 0 0); transition: clip-path .16s linear, color .42s ease; text-shadow: 0 3px 18px rgba(255,44,84,.3); }
 .lyric-line:not(.active) { opacity: .68; }
-.lyric-line.active { transform: translateX(10px) scale(1.025); filter: drop-shadow(0 8px 18px rgba(0,0,0,.28)); }
+.lyric-line.played .lyric-fill { color: #ffffffa8; text-shadow: none; }
+.lyric-line.active { color: transparent; transform: translateX(10px) scale(1.025); filter: drop-shadow(0 8px 18px rgba(0,0,0,.28)); }
+.lyric-line.active .lyric-base { color: #ffffff52; }
+.lyric-line.active .lyric-fill { color: #ff5a79; text-shadow: 0 4px 24px rgba(255,43,82,.42); }
 .lyrics-layout.no-artwork { grid-template-columns: minmax(0, 760px); justify-content: center; }
 </style>

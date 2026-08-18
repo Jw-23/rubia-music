@@ -22,7 +22,7 @@ onMounted(async () => {
     if (payload === 'settings') sourceSettingsOpen.value = true
     else if (payload === 'play-pause') void player.toggle()
     else if (payload === 'play-next') void player.playNext()
-    else if (payload === 'open-help') void openUrl('https://github.com/rubia-music')
+    else if (payload === 'open-help') void openUrl('https://lyswhut.github.io/lx-music-doc/desktop/custom-source')
     else if (views[payload]) { navigateTo(views[payload]); if (payload === 'view-search') requestAnimationFrame(() => window.dispatchEvent(new Event('rubia-focus-search'))) }
   })
 })
