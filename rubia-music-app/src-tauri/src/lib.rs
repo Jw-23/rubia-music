@@ -13,6 +13,8 @@ pub fn run() {
             commands::search_music,
             commands::resolve_music_url,
             commands::source_http_request,
+            commands::load_source_settings,
+            commands::save_source_settings,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

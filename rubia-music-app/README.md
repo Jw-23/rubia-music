@@ -7,7 +7,7 @@
 - 酷我音乐关键词搜索
 - 内置播放地址解析和 HTML Audio 播放
 - 播放/暂停、下一首、进度与音量控制
-- 导入基础 LX Music 自定义源脚本
+- 管理、切换及在线/本地导入 LX Music 自定义源脚本
 - Apple Music 风格的响应式桌面界面
 
 ## 开发
@@ -33,4 +33,4 @@ npm run tauri dev
 
 ## 自定义源兼容状态
 
-当前支持 LX API 2.0 的 `inited`、`request`、`musicUrl` 和基础 `lx.request`。源脚本在 sandbox iframe 中执行，HTTP 请求经 Rust 转发。依赖 AES、RSA、MD5、zlib 或完整 Node Buffer 行为的源，需要后续兼容层补齐后才能运行。
+当前支持 LX API 2.0 的 `inited`、`request`、`updateAlert`、`musicUrl` 与 `lx.request`，并提供 Buffer、AES、RSA、MD5、随机字节及 zlib 工具。源脚本在 sandbox iframe 中执行，HTTP 请求经 Rust 转发。源列表与脚本由 Rust 原子写入应用数据目录。

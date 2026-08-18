@@ -35,4 +35,6 @@ pub struct SourceHttpResponse {
     pub status_message: String,
     pub headers: std::collections::HashMap<String, String>,
     pub body: String,
+    pub bytes: usize,
+    pub raw: Vec<u8>,
 }

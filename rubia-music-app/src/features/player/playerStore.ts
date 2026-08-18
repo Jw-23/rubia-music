@@ -15,8 +15,10 @@ audio.addEventListener('error', () => { state.error = '音频加载失败，可�
 function preferredQuality(track: MusicTrack): Quality { return (['flac24bit', 'flac', '320k', '128k'] as Quality[]).find(q => track.qualities.includes(q)) ?? '128k' }
 async function play(track: MusicTrack, queue?: MusicTrack[]) {
   state.loading = true; state.error = ''; state.current = track; if (queue) state.queue = queue
-  const quality = preferredQuality(track)
-  try { const runtime = useSourceRuntime(); const url = runtime.canResolve(track.source, quality) ? await runtime.resolveMusicUrl(track, quality) : await resolveBuiltinUrl(track, quality); audio.src = url; await audio.play() }
+  const runtime = useSourceRuntime()
+  const sourceQuality = (['flac24bit', 'flac', '320k', '128k'] as Quality[]).find(quality => track.qualities.includes(quality) && runtime.canResolve(track.source, quality))
+  const quality = sourceQuality ?? preferredQuality(track)
+  try { const url = sourceQuality ? await runtime.resolveMusicUrl(track, sourceQuality) : await resolveBuiltinUrl(track, quality); audio.src = url; await audio.play() }
   catch (error) { state.error = error instanceof Error ? error.message : String(error) }
   finally { state.loading = false }
 }

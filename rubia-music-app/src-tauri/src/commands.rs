@@ -1,7 +1,7 @@
 use crate::{domain::{MusicTrack, SourceHttpRequest, SourceHttpResponse}, providers::ProviderRegistry};
 use reqwest::{Client, Method};
 use std::{collections::HashMap, time::Duration};
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 #[tauri::command]
 pub async fn search_music(query: String, page: Option<u32>, limit: Option<u32>, providers: State<'_, ProviderRegistry>) -> Result<Vec<MusicTrack>, String> {
@@ -26,6 +26,27 @@ pub async fn source_http_request(request: SourceHttpRequest) -> Result<SourceHtt
     let response = builder.send().await.map_err(|e| e.to_string())?;
     let status = response.status();
     let headers: HashMap<_, _> = response.headers().iter().filter_map(|(key, value)| value.to_str().ok().map(|v| (key.to_string(), v.to_owned()))).collect();
-    let body = response.text().await.map_err(|e| e.to_string())?;
-    Ok(SourceHttpResponse { status_code: status.as_u16(), status_message: status.canonical_reason().unwrap_or_default().into(), headers, body })
+    let raw = response.bytes().await.map_err(|e| e.to_string())?.to_vec();
+    let body = String::from_utf8_lossy(&raw).into_owned();
+    let bytes = raw.len();
+    Ok(SourceHttpResponse { status_code: status.as_u16(), status_message: status.canonical_reason().unwrap_or_default().into(), headers, body, bytes, raw })
+}
+
+#[tauri::command]
+pub async fn load_source_settings(app: AppHandle) -> Result<serde_json::Value, String> {
+    let path = app.path().app_data_dir().map_err(|e| e.to_string())?.join("sources.json");
+    if !path.exists() { return Ok(serde_json::json!({ "sources": [], "activeSourceId": null })); }
+    let bytes = tokio::fs::read(path).await.map_err(|e| e.to_string())?;
+    serde_json::from_slice(&bytes).map_err(|e| format!("音源配置损坏：{e}"))
+}
+
+#[tauri::command]
+pub async fn save_source_settings(app: AppHandle, settings: serde_json::Value) -> Result<(), String> {
+    let directory = app.path().app_data_dir().map_err(|e| e.to_string())?;
+    tokio::fs::create_dir_all(&directory).await.map_err(|e| e.to_string())?;
+    let path = directory.join("sources.json");
+    let temporary = directory.join("sources.json.tmp");
+    let bytes = serde_json::to_vec(&settings).map_err(|e| e.to_string())?;
+    tokio::fs::write(&temporary, bytes).await.map_err(|e| e.to_string())?;
+    tokio::fs::rename(temporary, path).await.map_err(|e| e.to_string())
 }
