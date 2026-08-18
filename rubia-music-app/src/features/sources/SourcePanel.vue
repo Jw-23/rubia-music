@@ -5,6 +5,7 @@ import { sourceSettingsOpen } from './settingsState'
 import { useSourceRuntime } from './useSourceRuntime'
 import { appSettings, resetAppSettings } from '../settings/appSettings'
 import { useLibrary } from '../library/libraryStore'
+import rubiaIcon from '../../assets/rubia-brand-icon.png'
 
 const runtime = useSourceRuntime()
 const input = ref<HTMLInputElement>()
@@ -41,7 +42,7 @@ async function remove(id: string, name: string) { if (confirm(`确定删除音�
         <section v-else-if="activeSection === 'lyrics'" class="settings-page"><p class="eyebrow">歌词</p><h1>歌词显示</h1><p class="settings-intro">控制全屏歌词的排版和滚动方式。</p><div class="preference-group"><h3>歌词字号</h3><label class="setting-slider"><span>{{ appSettings.lyricFontSize }}px</span><input v-model.number="appSettings.lyricFontSize" type="range" min="20" max="38" step="1"/></label></div><div class="preference-group"><label class="setting-row"><span><strong>灵动滚动</strong><small>使用随距离变化的平滑滚动动画</small></span><input v-model="appSettings.smoothLyrics" type="checkbox"/></label><label class="setting-row"><span><strong>显示大封面</strong><small>在歌词左侧展示专辑封面和歌曲信息</small></span><input v-model="appSettings.showLyricArtwork" type="checkbox"/></label></div></section>
         <section v-else-if="activeSection === 'data'" class="settings-page"><p class="eyebrow">数据</p><h1>数据管理</h1><p class="settings-intro">管理保存在这台设备上的资料库和偏好。</p><div class="preference-group"><label class="setting-row"><span><strong>资料库数据</strong><small>收藏 {{ library.favorites.value.length }} 首 · 歌单 {{ library.playlist.value.length }} 首 · 最近播放 {{ library.recent.value.length }} 首</small></span><button class="danger-button" @click="clearLibrary">清空</button></label><label class="setting-row"><span><strong>恢复默认设置</strong><small>不会删除音乐源和资料库</small></span><button class="secondary-button" @click="resetAppSettings">恢复</button></label></div></section>
         <section v-else class="settings-page"><p class="eyebrow">音乐来源</p><h1>自定义音源</h1><p class="settings-intro">管理用于解析歌曲播放地址的 LX Music 音源。一次只能启用一个源。</p>
-        <div class="builtin-source source-card" :class="{ selected: runtime.activeSourceId.value === null }" @click="select(null)"><div class="source-logo">R</div><div><strong>内置解析</strong><small>Rubia Music 基础播放服务</small></div><span class="source-check">{{ runtime.activeSourceId.value === null ? '✓' : '' }}</span></div>
+        <div class="builtin-source source-card" :class="{ selected: runtime.activeSourceId.value === null }" @click="select(null)"><div class="source-logo app-source-logo"><img :src="rubiaIcon" alt="Rubia Music"/></div><div><strong>内置解析</strong><small>Rubia Music 基础播放服务</small></div><span class="source-check">{{ runtime.activeSourceId.value === null ? '✓' : '' }}</span></div>
         <div class="source-list">
           <article v-for="source in runtime.sources.value" :key="source.id" class="source-card managed" :class="{ selected: runtime.activeSourceId.value === source.id }" @click="select(source.id)">
             <div class="source-logo custom">JS</div><div class="source-meta"><div><strong>{{ source.name }}</strong><b v-if="source.version">{{ /^\d/.test(source.version) ? `v${source.version}` : source.version }}</b><b v-if="source.author">{{ source.author }}</b></div><small>{{ source.description || '暂无描述' }}</small><label @click.stop><input type="checkbox" :checked="source.allowShowUpdateAlert" @change="runtime.setAllowUpdateAlert(source.id, ($event.target as HTMLInputElement).checked)"/>允许该源显示更新提醒</label></div>
@@ -59,3 +60,8 @@ async function remove(id: string, name: string) { if (confirm(`确定删除音�
   </div>
   <div v-if="runtime.updateNotice.visible" class="modal-backdrop"><section class="update-modal"><p class="eyebrow">音源更新</p><h2>{{ runtime.updateNotice.name }}</h2><p>{{ runtime.updateNotice.log }}</p><div><button @click="runtime.updateNotice.visible=false">关闭</button><button v-if="runtime.updateNotice.updateUrl" class="primary-button" @click="openUrl(runtime.updateNotice.updateUrl); runtime.updateNotice.visible=false">打开更新地址</button></div></section></div>
 </template>
+
+<style scoped>
+.app-source-logo { overflow: hidden; background: transparent; }
+.app-source-logo img { display: block; width: 100%; height: 100%; object-fit: cover; }
+</style>

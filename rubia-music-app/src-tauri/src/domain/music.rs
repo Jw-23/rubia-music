@@ -14,7 +14,7 @@ pub struct MusicTrack {
     pub source_data: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct LyricLine {
     pub time_seconds: f64,
@@ -33,7 +33,9 @@ pub struct SourceHttpRequest {
     pub timeout_ms: Option<u64>,
 }
 
-fn default_method() -> String { "GET".into() }
+fn default_method() -> String {
+    "GET".into()
+}
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]

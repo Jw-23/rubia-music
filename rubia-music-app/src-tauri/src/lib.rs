@@ -1,5 +1,8 @@
 mod commands;
 mod domain;
+mod lyrics;
+#[cfg(desktop)]
+mod native_menu;
 mod providers;
 
 use providers::ProviderRegistry;
@@ -23,10 +26,18 @@ fn init_tracing() {}
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     init_tracing();
-    tauri::Builder::default()
+    let builder = tauri::Builder::default()
         .plugin(tauri_plugin_opener::init())
         .manage(ProviderRegistry::new())
-        .manage(commands::SourceHttpClient::new())
+        .manage(commands::SourceHttpClient::new());
+    #[cfg(desktop)]
+    let builder = builder
+        .setup(|app| {
+            app.set_menu(native_menu::build(app)?)?;
+            Ok(())
+        })
+        .on_menu_event(|app, event| native_menu::handle_event(app, event.id().as_ref()));
+    builder
         .invoke_handler(tauri::generate_handler![
             commands::search_music,
             commands::resolve_music_url,

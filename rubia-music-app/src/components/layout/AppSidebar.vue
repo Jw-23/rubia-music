@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { openSourceSettings } from '../../features/sources/settingsState'
 import { activeView, navigateTo, type AppView } from '../../features/navigation/navigationState'
+import rubiaIcon from '../../assets/rubia-brand-icon.png'
 defineProps<{ sourceName: string }>()
 const go = (view: AppView) => navigateTo(view)
 </script>
 <template>
   <aside class="sidebar">
     <div class="traffic-space" />
-    <div class="brand"><span class="brand-mark">R</span><span>Rubia Music</span></div>
+    <div class="brand"><img class="brand-mark" :src="rubiaIcon" alt="" /><span>Rubia Music</span></div>
     <nav>
       <button class="nav-item" :class="{ active: activeView === 'search' }" @click="go('search')"><span>⌕</span>搜索</button>
       <button class="nav-item" :class="{ active: activeView === 'home' }" @click="go('home')"><span>⌂</span>首页</button>
