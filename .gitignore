@@ -38,5 +38,5 @@ src-tauri/gen/
 .DS_Store
 Thumbs.db
 
-# Upstream reference project (separate Git repository)
-/lx-music-desktop/
+# Upstream reference projects (local only, separate Git repositories)
+/lx-music-*/
