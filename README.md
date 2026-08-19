@@ -91,6 +91,23 @@ npm run tauri build
 
 构建产物位于 Cargo target 目录中，具体格式取决于当前操作系统。
 
+## 自动构建与发布
+
+仓库中的 `Build desktop installers` GitHub Actions 工作流会构建以下安装包：
+
+- macOS Apple Silicon 的 DMG
+- macOS Intel 的 DMG
+- Windows x64 的 NSIS 和 MSI 安装包
+
+推送到 `main` 分支或在 GitHub 的 Actions 页面手动运行工作流时，安装包会保存为工作流产物。推送与应用版本一致的标签时，还会自动创建 GitHub Release 并上传安装包：
+
+```bash
+git tag v0.1.1
+git push origin v0.1.1
+```
+
+工作流会校验标签是否与 `package.json` 中的应用版本一致。CI 生成的 macOS 安装包使用 ad-hoc 签名；面向最终用户正式发布时，仍建议配置 Apple Developer ID、公证以及 Windows 代码签名。
+
 ## 自定义音乐源
 
 在“设置 → 音乐来源”中可以：
