@@ -1,3 +1,9 @@
 [workspace]
 members = ["rubia-music-app/src-tauri"]
 resolver = "2"
+
+[patch.crates-io]
+# Tauri 2.11.5 wraps these queues in an extra newtype layer, but eight call
+# sites in the published crate still access the inner mutex one level too
+# early. Keep the small upstream patch local until a fixed release is shipped.
+tauri = { path = "third_party/tauri" }

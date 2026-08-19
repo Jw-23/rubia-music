@@ -65,6 +65,7 @@ pub async fn source_http_request(
     let method = Method::from_bytes(request.method.to_uppercase().as_bytes())
         .map_err(|_| "无效的 HTTP 方法".to_string())?;
     let mut builder = client
+        .inner()
         .0
         .request(method, &request.url)
         .timeout(Duration::from_millis(timeout));

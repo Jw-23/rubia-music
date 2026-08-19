@@ -3,7 +3,7 @@ import type { MusicTrack } from '../../types/music'
 import { resolveBuiltinUrl } from '../../services/musicApi'
 import { useSourceRuntime } from '../sources/useSourceRuntime'
 import { sourceDebug, sourceDebugError } from '../sources/sourceDebug'
-import { selectSourceQuality, selectTrackQuality } from './qualityPreference'
+import { selectSourceQualities, selectTrackQuality } from './qualityPreference'
 import { useLibrary } from '../library/libraryStore'
 import { appSettings } from '../settings/appSettings'
 
@@ -13,6 +13,16 @@ let customLoadInProgress = false
 let fallbackInProgress = false
 let playSequence = 0
 const isPreviewDuration = (track: MusicTrack) => Number.isFinite(audio.duration) && audio.duration > 0 && track.durationSeconds >= 60 && audio.duration < Math.min(30, track.durationSeconds * 0.5)
+const normalizePlaybackUrl = (value: string) => {
+  try {
+    const url = new URL(value)
+    // LX Mobile uses a native player that accepts these HTTP links. WKWebView
+    // is more reliable over HTTPS, which the Kuwo media hosts also support.
+    if (url.protocol === 'http:' && /(^|\.)kuwo\.cn$/i.test(url.hostname)) url.protocol = 'https:'
+    return url.toString()
+  } catch { return value }
+}
+const resetAudioSource = () => { audio.pause(); audio.removeAttribute('src'); audio.load() }
 audio.volume = state.volume
 watch(() => appSettings.volume, value => { state.volume = value; audio.volume = value })
 audio.addEventListener('timeupdate', () => { state.currentTime = audio.currentTime })
@@ -32,28 +42,40 @@ async function play(track: MusicTrack, queue?: MusicTrack[]) {
   state.loading = true; state.error = ''; state.current = track; if (queue) state.queue = queue
   const runtime = useSourceRuntime()
   const hasCustomSource = runtime.activeSourceId.value !== null
-  const sourceQuality = selectSourceQuality(quality => runtime.canResolve(track.source, quality))
-  const quality = sourceQuality ?? selectTrackQuality(track)
-  sourceDebug('player:quality', { trackQualities: track.qualities, sourceQualities: runtime.capabilities.value?.sources?.[track.source]?.qualitys, selected: quality })
+  const sourceQualities = selectSourceQualities(quality => runtime.canResolve(track.source, quality))
+  const quality = sourceQualities[0] ?? selectTrackQuality(track)
+  sourceDebug('player:quality', { trackQualities: track.qualities, sourceQualities: runtime.capabilities.value?.sources?.[track.source]?.qualitys, candidates: sourceQualities, selected: quality })
   try {
     if (hasCustomSource && runtime.status.value !== 'ready') {
       const detail = runtime.error.value || (runtime.status.value === 'loading' ? '音源仍在初始化' : '音源未完成初始化')
       throw new Error(`自定义源「${runtime.sourceName.value}」不可用：${detail}`)
     }
-    if (hasCustomSource && !sourceQuality) throw new Error(`自定义源「${runtime.sourceName.value}」不支持 ${track.source} 或当前歌曲音质`)
-    const url = sourceQuality ? await runtime.resolveMusicUrl(track, sourceQuality) : await resolveBuiltinUrl(track, quality)
-    if (playId !== playSequence) { sourceDebug('player:stale-request', { playId, track: { id: track.id, name: track.name }, stage: 'url-resolved' }); return }
-    sourceDebug('player:load', { track: { id: track.id, source: track.source, name: track.name }, quality, customSource: sourceQuality ? runtime.sourceName.value : null, url })
-    customLoadInProgress = !!sourceQuality
-    try { audio.src = url; await audio.play(); customLoadInProgress = false; useLibrary().recordRecent(track) }
-    catch (playError) {
+    if (hasCustomSource && !sourceQualities.length) throw new Error(`自定义源「${runtime.sourceName.value}」不支持 ${track.source} 或当前歌曲音质`)
+    let playError: unknown = null
+    if (sourceQualities.length) {
+      customLoadInProgress = true
+      for (const candidate of sourceQualities) {
+        try {
+          const rawUrl = await runtime.resolveMusicUrl(track, candidate)
+          if (playId !== playSequence) { customLoadInProgress = false; sourceDebug('player:stale-request', { playId, track: { id: track.id, name: track.name }, stage: 'url-resolved' }); return }
+          const url = normalizePlaybackUrl(rawUrl)
+          sourceDebug('player:load', { track: { id: track.id, source: track.source, name: track.name }, quality: candidate, customSource: runtime.sourceName.value, url, normalizedFrom: url === rawUrl ? null : rawUrl })
+          resetAudioSource(); audio.src = url; await audio.play()
+          customLoadInProgress = false; state.error = ''; useLibrary().recordRecent(track)
+          sourceDebug('player:custom-playing', { track: { id: track.id, source: track.source, name: track.name }, quality: candidate, currentSrc: audio.currentSrc })
+          return
+        } catch (error) {
+          playError = error
+          sourceDebugError('player:custom-quality-unusable', { sourceName: runtime.sourceName.value, track: { id: track.id, name: track.name }, quality: candidate, mediaErrorCode: audio.error?.code, error })
+        }
+      }
       customLoadInProgress = false
-      const canFallback = appSettings.fallbackToBuiltin && !!sourceQuality && (playError instanceof DOMException ? playError.name === 'NotSupportedError' : audio.error?.code === MediaError.MEDIA_ERR_SRC_NOT_SUPPORTED)
+      const canFallback = appSettings.fallbackToBuiltin
       if (!canFallback) throw playError
       if (playId !== playSequence) { sourceDebug('player:stale-request', { playId, track: { id: track.id, name: track.name }, stage: 'custom-url-failed' }); return }
-      sourceDebugError('player:custom-url-unusable', { sourceName: runtime.sourceName.value, url, mediaErrorCode: audio.error?.code, error: playError })
+      sourceDebugError('player:custom-url-unusable', { sourceName: runtime.sourceName.value, attemptedQualities: sourceQualities, mediaErrorCode: audio.error?.code, error: playError })
       fallbackInProgress = true
-      audio.pause(); audio.removeAttribute('src'); audio.load(); state.error = ''
+      resetAudioSource(); state.error = ''
       const fallbackUrl = await resolveBuiltinUrl(track, quality)
       if (playId !== playSequence) { fallbackInProgress = false; sourceDebug('player:stale-request', { playId, track: { id: track.id, name: track.name }, stage: 'fallback-resolved' }); return }
       sourceDebug('player:builtin-fallback', { reason: 'custom source returned an unloadable URL', track: { id: track.id, source: track.source, name: track.name }, quality, url: fallbackUrl })
@@ -67,6 +89,11 @@ async function play(track: MusicTrack, queue?: MusicTrack[]) {
       fallbackInProgress = false; state.error = ''
       useLibrary().recordRecent(track)
       sourceDebug('player:fallback-playing', { track: { id: track.id, source: track.source, name: track.name }, currentSrc: audio.currentSrc, readyState: audio.readyState })
+    } else {
+      const url = await resolveBuiltinUrl(track, quality)
+      if (playId !== playSequence) return
+      sourceDebug('player:load', { track: { id: track.id, source: track.source, name: track.name }, quality, customSource: null, url })
+      audio.src = url; await audio.play(); useLibrary().recordRecent(track)
     }
   }
   catch (error) { customLoadInProgress = false; fallbackInProgress = false; if (playId === playSequence) { state.error = error instanceof Error ? error.message : String(error); sourceDebugError('player:failed', { message: state.error, error }) } }

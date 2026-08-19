@@ -9,8 +9,8 @@ export function selectTrackQuality(track: MusicTrack) {
   return preference().find(quality => track.qualities.includes(quality)) ?? defaultPlaybackQuality
 }
 
-export function selectSourceQuality(supports: (quality: Quality) => boolean) {
+export function selectSourceQualities(supports: (quality: Quality) => boolean) {
   // The custom source is authoritative. Search providers sometimes omit 128k
   // from their metadata even though LX-compatible sources can resolve it.
-  return preference().find(supports)
+  return preference().filter(supports)
 }
