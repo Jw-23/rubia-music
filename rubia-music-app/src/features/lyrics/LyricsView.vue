@@ -3,6 +3,7 @@ import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 import ArtworkImage from '../../components/ArtworkImage.vue'
 import { getMusicLyrics } from '../../services/musicApi'
 import type { LyricLine } from '../../types/music'
+import PlaybackButtons from '../player/PlaybackButtons.vue'
 import { usePlayer } from '../player/playerStore'
 import { appSettings } from '../settings/appSettings'
 
@@ -21,6 +22,8 @@ const activeIndex = computed(() => {
   }
   return index
 })
+const timelineProgress = computed(() => `${Math.min(100, Math.max(0, player.progress.value * 100))}%`)
+const volumeProgress = computed(() => `${Math.min(100, Math.max(0, player.state.volume * 100))}%`)
 const lyricProgress = (index: number) => {
   if (index < activeIndex.value) return 100
   if (index !== activeIndex.value) return 0
@@ -99,8 +102,11 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancel
       </div>
       <footer class="lyrics-player">
         <div class="lyrics-now"><ArtworkImage :src="player.state.current?.artworkUrl" :alt="player.state.current?.name" size="row"/><span><strong>{{ player.state.current?.name }}</strong><small>{{ player.state.current?.artist }}</small></span></div>
-        <div class="lyrics-controls"><div><button disabled title="上一首">↶</button><button class="lyrics-play" :disabled="!player.state.current || player.state.loading" @click="player.toggle">{{ player.state.loading ? '…' : player.state.playing ? 'Ⅱ' : '▶' }}</button><button title="下一首" @click="player.playNext">↷</button></div><label><span>{{ formatTime(player.state.currentTime) }}</span><input type="range" min="0" :max="player.state.duration || 1" step="0.1" :value="player.state.currentTime" @input="player.seek(Number(($event.target as HTMLInputElement).value))"/><span>{{ formatTime(player.state.duration) }}</span></label></div>
-        <div class="lyrics-volume"><span>◖</span><input type="range" min="0" max="1" step="0.01" :value="player.state.volume" @input="player.setVolume(Number(($event.target as HTMLInputElement).value))"/></div>
+        <div class="lyrics-controls">
+          <PlaybackButtons class="lyrics-transport-buttons" />
+          <label><span>{{ formatTime(player.state.currentTime) }}</span><input class="player-range" type="range" min="0" :max="player.state.duration || 1" step="0.1" :value="player.state.currentTime" :style="{ '--range-progress': timelineProgress }" aria-label="播放进度" @input="player.seek(Number(($event.target as HTMLInputElement).value))"/><span>{{ formatTime(player.state.duration) }}</span></label>
+        </div>
+        <div class="lyrics-volume"><span class="volume-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 10v4h3l4 3V7l-4 3H5ZM15 9.2a4 4 0 0 1 0 5.6M17.5 7a7 7 0 0 1 0 10" /></svg></span><input class="player-range" type="range" min="0" max="1" step="0.01" :value="player.state.volume" :style="{ '--range-progress': volumeProgress }" aria-label="音量" @input="player.setVolume(Number(($event.target as HTMLInputElement).value))"/></div>
       </footer>
     </section>
   </Teleport>
