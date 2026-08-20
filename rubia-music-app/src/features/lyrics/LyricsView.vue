@@ -14,12 +14,14 @@ const error = ref('')
 const lineElements = ref<HTMLElement[]>([])
 const scrollContainer = ref<HTMLElement | null>(null)
 let scrollFrame = 0
+let visualFrame = 0
 let lyricRequest = 0
 const lyricMemoryCache = new Map<string, LyricLine[]>()
+const visualTime = ref(player.state.currentTime)
 const activeIndex = computed(() => {
   let index = -1
   for (let i = 0; i < lines.value.length; i++) {
-    if (lines.value[i].timeSeconds > player.state.currentTime + 0.08) break
+    if (lines.value[i].timeSeconds > visualTime.value + 0.04) break
     index = i
   }
   return index
@@ -32,7 +34,20 @@ const lyricProgress = (index: number) => {
   const start = lines.value[index]?.timeSeconds ?? 0
   const next = lines.value[index + 1]?.timeSeconds
   const end = next && next > start ? next : Math.max(start + 3, player.state.duration || start + 6)
-  return Math.min(100, Math.max(0, ((player.state.currentTime - start) / (end - start)) * 100))
+  return Math.min(100, Math.max(0, ((visualTime.value - start) / Math.max(.4, end - start)) * 100))
+}
+const characterWeight = (character: string) => /[，。！？、；：,.!?;:]/.test(character) ? .52 : /\s/.test(character) ? .35 : /^[a-z0-9]$/i.test(character) ? .72 : 1
+const renderedLines = computed(() => lines.value.map(line => {
+  const characters = Array.from(line.text)
+  const starts: number[] = []; let total = 0
+  for (const character of characters) { starts.push(total); total += characterWeight(character) }
+  return { line, characters, starts, total: total || 1 }
+}))
+const characterFill = (lineIndex: number, rendered: typeof renderedLines.value[number], characterIndex: number) => {
+  if (lineIndex < activeIndex.value) return 1
+  if (lineIndex > activeIndex.value) return 0
+  const position = lyricProgress(lineIndex) / 100 * rendered.total
+  return Math.min(1, Math.max(0, (position - rendered.starts[characterIndex]) / characterWeight(rendered.characters[characterIndex])))
 }
 
 const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
@@ -108,8 +123,9 @@ const onKeydown = (event: KeyboardEvent) => {
 }
 const emit = defineEmits<{ close: [] }>()
 const emitClose = () => emit('close')
-onMounted(() => window.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => { lyricRequest += 1; window.removeEventListener('keydown', onKeydown); cancelAnimationFrame(scrollFrame) })
+const updateVisualTime = () => { visualTime.value = player.getCurrentTime(); visualFrame = requestAnimationFrame(updateVisualTime) }
+onMounted(() => { window.addEventListener('keydown', onKeydown); visualFrame = requestAnimationFrame(updateVisualTime) })
+onBeforeUnmount(() => { lyricRequest += 1; window.removeEventListener('keydown', onKeydown); cancelAnimationFrame(scrollFrame); cancelAnimationFrame(visualFrame) })
 </script>
 
 <template>
@@ -125,7 +141,7 @@ onBeforeUnmount(() => { lyricRequest += 1; window.removeEventListener('keydown',
         <main ref="scrollContainer" class="lyrics-scroll" :style="{ '--lyric-size': `${appSettings.lyricFontSize}px` }">
           <div v-if="loading" class="lyrics-message">正在加载歌词…</div>
           <div v-else-if="error" class="lyrics-message"><span>{{ error }}</span><button @click="loadLyrics(false)">重新搜索</button></div>
-          <button v-for="(line, index) in lines" :key="`${line.timeSeconds}-${index}`" :ref="element => setLineElement(element, index)" class="lyric-line" :class="{ active: index === activeIndex, played: index < activeIndex }" :style="{ '--lyric-progress': `${lyricProgress(index)}%` }" @click="jumpTo(line)"><span class="lyric-base">{{ line.text }}</span><span class="lyric-fill" aria-hidden="true">{{ line.text }}</span></button>
+          <button v-for="(rendered, index) in renderedLines" :key="`${rendered.line.timeSeconds}-${index}`" :ref="element => setLineElement(element, index)" class="lyric-line" :class="{ active: index === activeIndex, played: index < activeIndex }" @click="jumpTo(rendered.line)"><span class="lyric-base"><span v-for="(character, characterIndex) in rendered.characters" :key="characterIndex">{{ character }}</span></span><span class="lyric-fill" aria-hidden="true"><span v-for="(character, characterIndex) in rendered.characters" :key="characterIndex" :style="{ opacity: characterFill(index, rendered, characterIndex) }">{{ character }}</span></span></button>
         </main>
       </div>
       <footer class="lyrics-player">
@@ -145,8 +161,10 @@ onBeforeUnmount(() => { lyricRequest += 1; window.removeEventListener('keydown',
 .lyrics-header button { display: grid; place-items: center; padding: 0; line-height: 0; }
 .lyrics-header button svg { display: block; width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 .lyric-line { position: relative; isolation: isolate; font-size: var(--lyric-size); transform-origin: left center; transition: color .42s ease, opacity .42s ease, transform .55s cubic-bezier(.2,.8,.2,1), font-size .42s cubic-bezier(.2,.8,.2,1), filter .42s ease; }
-.lyric-base { display: block; color: #ffffff63; transition: color .42s ease; }
-.lyric-fill { position: absolute; inset: 12px 0; display: block; overflow: hidden; color: #ff5575; pointer-events: none; clip-path: inset(0 calc(100% - var(--lyric-progress)) 0 0); transition: clip-path .16s linear, color .42s ease; text-shadow: none; }
+.lyric-base { display: block; color: #ffffff63; white-space: pre-wrap; transition: color .42s ease; }
+.lyric-fill { position: absolute; inset: 12px 0; display: block; color: #ff5575; white-space: pre-wrap; pointer-events: none; text-shadow: none; }
+.lyric-base>span,.lyric-fill>span{display:inline;white-space:pre-wrap}
+.lyric-fill>span{transition:opacity .1s linear,color .42s ease,text-shadow .2s ease}
 .lyric-line:not(.active) { opacity: .68; }
 .lyric-line.played .lyric-fill { color: #ffffffa8; text-shadow: none; }
 .lyric-line.active { color: transparent; transform: translateX(10px) scale(1.025); filter: none; text-shadow: none; }

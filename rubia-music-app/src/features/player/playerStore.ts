@@ -128,6 +128,7 @@ async function toggle() { if (!state.current) return; if (audio.paused) await au
 async function playNext() { if (!state.current) return; const index = state.queue.findIndex(t => t.id === state.current?.id && t.source === state.current?.source); const next = state.queue[index + 1]; if (next) await play(next) }
 function seek(seconds: number) { audio.currentTime = seconds }
 function setVolume(value: number) { state.volume = value; audio.volume = value; appSettings.volume = value }
+function getCurrentTime() { return Number.isFinite(audio.currentTime) ? audio.currentTime : state.currentTime }
 async function restoreSession() {
   if (restored || !savedSession.current) return
   restored = true
@@ -146,4 +147,4 @@ async function restoreSession() {
 }
 window.addEventListener('beforeunload', () => persistSession(true))
 watch(() => [state.current, state.queue] as const, () => persistSession(true), { deep: true })
-export function usePlayer() { return { state, progress: computed(() => state.duration ? state.currentTime / state.duration : 0), play, toggle, playNext, seek, setVolume, restoreSession } }
+export function usePlayer() { return { state, progress: computed(() => state.duration ? state.currentTime / state.duration : 0), play, toggle, playNext, seek, setVolume, getCurrentTime, restoreSession } }
