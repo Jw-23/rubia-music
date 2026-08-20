@@ -10,7 +10,7 @@ use std::{
 };
 use tauri::{AppHandle, Manager};
 
-const USER_AGENT: &str = "RubiaMusic/0.1.4 (https://github.com/rubia-music)";
+const USER_AGENT: &str = "RubiaMusic/0.1.6 (https://github.com/rubia-music)";
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
