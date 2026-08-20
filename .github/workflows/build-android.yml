@@ -51,7 +51,24 @@ jobs:
         uses: nttld/setup-ndk@v1
         with:
           ndk-version: r27c
-          local-cache: true
+          # The action's local cache can retain an incomplete NDK directory
+          # (target wrappers exist while toolchains/llvm/.../bin/clang does not),
+          # which makes Rust linking fail with exit code 127.
+          local-cache: false
+
+      - name: Verify Android NDK toolchain
+        shell: bash
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+        run: |
+          set -euo pipefail
+          clang="$NDK_HOME/toolchains/llvm/prebuilt/linux-x86_64/bin/clang"
+          if [[ ! -x "$clang" ]]; then
+            echo "Android NDK installation is incomplete: $clang is missing" >&2
+            find "$NDK_HOME/toolchains/llvm/prebuilt" -maxdepth 3 -type f -name '*clang*' -print >&2 || true
+            exit 1
+          fi
+          "$clang" --version
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
