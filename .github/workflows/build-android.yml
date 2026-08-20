@@ -10,22 +10,26 @@ permissions:
   contents: write
 
 concurrency:
-  group: android-build-${{ github.ref }}
+  group: android-${{ github.ref }}
   cancel-in-progress: false
+
+env:
+  APP_DIR: rubia-music-app
 
 jobs:
   build-android:
-    name: Android APK and AAB
-    runs-on: ubuntu-latest
+    name: Build Android APK and AAB
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
 
     steps:
       - name: Check out repository
         uses: actions/checkout@v7
 
       - name: Set up Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
-          node-version: lts/*
+          node-version: "22"
           cache: npm
           cache-dependency-path: rubia-music-app/package-lock.json
 
@@ -35,75 +39,199 @@ jobs:
           distribution: temurin
           java-version: "17"
 
-      - name: Install Rust stable
+      - name: Set up Android NDK
+        id: setup-ndk
+        uses: nttld/setup-ndk@v1
+        with:
+          ndk-version: r27c
+          local-cache: true
+
+      - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
         with:
           targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
 
       - name: Cache Rust build output
-        uses: swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@v2
         with:
           workspaces: . -> target
           shared-key: android
 
-      - name: Install Android NDK
-        shell: bash
-        run: |
-          NDK_VERSION=27.2.12479018
-          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
-          yes | "$SDKMANAGER" --licenses > /dev/null || true
-          "$SDKMANAGER" "ndk;$NDK_VERSION"
-          echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
-
       - name: Install frontend dependencies
-        working-directory: rubia-music-app
+        working-directory: ${{ env.APP_DIR }}
         run: npm ci
 
       - name: Verify release version
         id: app-version
         shell: bash
-        working-directory: rubia-music-app
+        working-directory: ${{ env.APP_DIR }}
         run: |
           version=$(node -p "require('./package.json').version")
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
           if [[ "$GITHUB_REF" == refs/tags/* && "$GITHUB_REF_NAME" != "v$version" ]]; then
             echo "Tag $GITHUB_REF_NAME does not match application version v$version" >&2
             exit 1
           fi
 
       - name: Initialize Android project
-        working-directory: rubia-music-app
+        working-directory: ${{ env.APP_DIR }}
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: npm run tauri android init -- --ci
 
-      - name: Build and publish Android release assets
-        if: startsWith(github.ref, 'refs/tags/v')
-        uses: tauri-apps/tauri-action@v1
+      - name: Configure Android release signing
+        shell: bash
+        working-directory: ${{ env.APP_DIR }}
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          NDK_HOME: ${{ env.NDK_HOME }}
-        with:
-          projectPath: rubia-music-app
-          mobile: android
-          tagName: ${{ github.ref_name }}
-          releaseName: Rubia Music ${{ github.ref_name }}
-          releaseBody: Download the installer for your operating system from the assets below.
-          releaseDraft: false
-          prerelease: false
-          args: --apk --aab --target aarch64 --target armv7 --target x86_64 --ci
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+          ANDROID_KEY_BASE64: ${{ secrets.ANDROID_KEY_BASE64 }}
+        run: |
+          set -euo pipefail
 
-      - name: Build Android workflow artifact
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        working-directory: rubia-music-app
+          for name in ANDROID_KEY_ALIAS ANDROID_KEY_PASSWORD ANDROID_KEY_BASE64; do
+            if [[ -z "${!name:-}" ]]; then
+              echo "Missing required GitHub Actions secret: $name" >&2
+              exit 1
+            fi
+          done
+
+          printf '%s' "$ANDROID_KEY_BASE64" | base64 --decode > "$RUNNER_TEMP/rubia-upload-keystore.jks"
+
+          cat > src-tauri/gen/android/keystore.properties <<EOF
+          keyAlias=$ANDROID_KEY_ALIAS
+          password=$ANDROID_KEY_PASSWORD
+          storeFile=$RUNNER_TEMP/rubia-upload-keystore.jks
+          EOF
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          path = Path("src-tauri/gen/android/app/build.gradle.kts")
+          text = path.read_text(encoding="utf-8")
+
+          import_anchor = "import java.util.Properties\n"
+          build_types_anchor = "    buildTypes {\n"
+          release_anchor = '        getByName("release") {\n'
+
+          for anchor in (import_anchor, build_types_anchor, release_anchor):
+              if text.count(anchor) != 1:
+                  raise SystemExit(f"Unexpected Tauri Gradle template; anchor count for {anchor!r} is not 1")
+
+          text = text.replace(
+              import_anchor,
+              import_anchor + "import java.io.FileInputStream\n",
+              1,
+          )
+          text = text.replace(
+              build_types_anchor,
+              '''    signingConfigs {
+                  create("release") {
+                      val propertiesFile = rootProject.file("keystore.properties")
+                      val properties = Properties()
+                      properties.load(FileInputStream(propertiesFile))
+                      keyAlias = properties["keyAlias"] as String
+                      keyPassword = properties["password"] as String
+                      storeFile = file(properties["storeFile"] as String)
+                      storePassword = properties["password"] as String
+                  }
+              }
+              ''' + build_types_anchor,
+              1,
+          )
+          text = text.replace(
+              release_anchor,
+              release_anchor + '            signingConfig = signingConfigs.getByName("release")\n',
+              1,
+          )
+
+          path.write_text(text, encoding="utf-8")
+          PY
+
+      - name: Build signed Android packages
+        working-directory: ${{ env.APP_DIR }}
+        env:
+          NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
+          ANDROID_NDK_HOME: ${{ steps.setup-ndk.outputs.ndk-path }}
         run: npm run tauri android build -- --apk --aab --target aarch64 --target armv7 --target x86_64 --ci
 
-      - name: Upload Android workflow artifacts
+      - name: Verify APK signature and package name
+        shell: bash
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          set -euo pipefail
+
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f -name '*universal*release.apk' ! -name '*unsigned*' -print -quit)
+          if [[ -z "$apk" ]]; then
+            echo "Signed universal release APK was not produced" >&2
+            exit 1
+          fi
+
+          build_tools=$(find "$ANDROID_HOME/build-tools" \
+            -mindepth 1 -maxdepth 1 -type d -print | sort -V | tail -1)
+          "$build_tools/apksigner" verify --verbose --print-certs "$apk"
+
+          expected_package=$(node -p "require('./src-tauri/tauri.conf.json').identifier")
+          actual_package=$("$build_tools/aapt" dump badging "$apk" \
+            | sed -n "s/^package: name='\([^']*\)'.*/\1/p")
+          if [[ "$actual_package" != "$expected_package" ]]; then
+            echo "APK package mismatch: expected $expected_package, got $actual_package" >&2
+            exit 1
+          fi
+
+          echo "Verified signed APK package: $actual_package"
+
+      - name: Stage verified release assets
+        shell: bash
+        working-directory: ${{ env.APP_DIR }}
+        run: |
+          set -euo pipefail
+
+          version="${{ steps.app-version.outputs.version }}"
+          apk=$(find src-tauri/gen/android/app/build/outputs/apk \
+            -type f -name '*universal*release.apk' ! -name '*unsigned*' -print -quit)
+          aab=$(find src-tauri/gen/android/app/build/outputs/bundle \
+            -type f -name '*universal*release.aab' -print -quit)
+
+          if [[ -z "$apk" || -z "$aab" ]]; then
+            echo "Verified universal APK/AAB assets were not both produced" >&2
+            exit 1
+          fi
+
+          mkdir -p android-release
+          cp "$apk" "android-release/Rubia.Music_${version}_universal.apk"
+          cp "$aab" "android-release/Rubia.Music_${version}_universal.aab"
+
+      - name: Publish tagged Android release assets
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        working-directory: ${{ env.APP_DIR }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          tag="$GITHUB_REF_NAME"
+          title="Rubia Music $tag"
+          notes="Android APK and AAB for $tag."
+
+          if gh release view "$tag" > /dev/null 2>&1; then
+            gh release edit "$tag" --title "$title" --notes "$notes"
+          else
+            gh release create "$tag" --verify-tag --title "$title" --notes "$notes"
+          fi
+
+          gh release upload "$tag" android-release/* --clobber
+
+      - name: Upload manually dispatched artifacts
         if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
         uses: actions/upload-artifact@v4
         with:
           name: rubia-music-v${{ steps.app-version.outputs.version }}-android
-          path: |
-            rubia-music-app/src-tauri/gen/android/app/build/outputs/apk/**/*.apk
-            rubia-music-app/src-tauri/gen/android/app/build/outputs/bundle/**/*.aab
+          path: rubia-music-app/android-release/*
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
