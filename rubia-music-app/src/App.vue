@@ -9,6 +9,7 @@ import SourcePanel from './features/sources/SourcePanel.vue'
 import { useSourceRuntime } from './features/sources/useSourceRuntime'
 import HomeView from './features/home/HomeView.vue'
 import LibraryView from './features/library/LibraryView.vue'
+import DownloadsView from './features/cache/DownloadsView.vue'
 import { activeView, navigateTo, type AppView } from './features/navigation/navigationState'
 import { sourceSettingsOpen } from './features/sources/settingsState'
 import { usePlayer } from './features/player/playerStore'
@@ -32,7 +33,7 @@ onBeforeUnmount(() => unlistenMenu?.())
 <template>
   <div class="app-shell">
     <AppSidebar :source-name="sourceRuntime.sourceName.value" />
-    <main class="content"><SearchView v-if="activeView === 'search'"/><HomeView v-else-if="activeView === 'home'"/><LibraryView v-else :mode="activeView"/></main>
+    <main class="content"><SearchView v-if="activeView === 'search'"/><HomeView v-else-if="activeView === 'home'"/><DownloadsView v-else-if="activeView === 'downloads'"/><LibraryView v-else :mode="activeView"/></main>
     <PlayerBar />
     <SourcePanel />
   </div>

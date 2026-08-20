@@ -5,7 +5,7 @@ use crate::{
 };
 use reqwest::{Client, Method};
 use std::{collections::HashMap, time::Duration};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 pub struct SourceHttpClient(pub Client);
 
@@ -156,20 +156,41 @@ pub struct CachedTrack {
     bytes: usize,
 }
 
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DownloadProgress {
+    track_key: String,
+    received: u64,
+    total: Option<u64>,
+    percent: u8,
+}
+
 #[tauri::command]
 pub async fn cache_track(app: AppHandle, url: String, track_key: String, quality: String) -> Result<CachedTrack, String> {
     let parsed = reqwest::Url::parse(&url).map_err(|_| "歌曲下载地址无效".to_string())?;
     if !matches!(parsed.scheme(), "http" | "https") { return Err("仅支持 HTTP 或 HTTPS 下载地址".into()); }
     let path = cache_path(&app, &track_key)?;
     if let Some(parent) = path.parent() { tokio::fs::create_dir_all(parent).await.map_err(|e| e.to_string())?; }
-    let response = Client::builder().timeout(Duration::from_secs(180)).build().map_err(|e| e.to_string())?
+    let mut response = Client::builder().timeout(Duration::from_secs(180)).build().map_err(|e| e.to_string())?
         .get(parsed).send().await.map_err(|e| format!("下载失败：{e}"))?.error_for_status().map_err(|e| format!("下载失败：{e}"))?;
-    let content = response.bytes().await.map_err(|e| format!("读取歌曲数据失败：{e}"))?;
-    if content.is_empty() { return Err("下载结果为空".into()); }
+    let total = response.content_length();
     let temporary = path.with_extension(format!("{quality}.download"));
-    tokio::fs::write(&temporary, &content).await.map_err(|e| format!("保存歌曲失败：{e}"))?;
+    let mut file = tokio::fs::File::create(&temporary).await.map_err(|e| format!("保存歌曲失败：{e}"))?;
+    let mut received = 0_u64;
+    while let Some(chunk) = response.chunk().await.map_err(|e| format!("读取歌曲数据失败：{e}"))? {
+        use tokio::io::AsyncWriteExt;
+        file.write_all(&chunk).await.map_err(|e| format!("保存歌曲失败：{e}"))?;
+        received += chunk.len() as u64;
+        let percent = total.map(|size| ((received.saturating_mul(100) / size.max(1)).min(99)) as u8).unwrap_or(0);
+        let _ = app.emit("rubia://download-progress", DownloadProgress { track_key: track_key.clone(), received, total, percent });
+    }
+    use tokio::io::AsyncWriteExt;
+    file.flush().await.map_err(|e| format!("保存歌曲失败：{e}"))?;
+    drop(file);
+    if received == 0 { let _ = tokio::fs::remove_file(&temporary).await; return Err("下载结果为空".into()); }
     tokio::fs::rename(&temporary, &path).await.map_err(|e| format!("保存歌曲失败：{e}"))?;
-    Ok(CachedTrack { path: path.to_string_lossy().into_owned(), bytes: content.len() })
+    let _ = app.emit("rubia://download-progress", DownloadProgress { track_key, received, total, percent: 100 });
+    Ok(CachedTrack { path: path.to_string_lossy().into_owned(), bytes: received as usize })
 }
 
 #[tauri::command]

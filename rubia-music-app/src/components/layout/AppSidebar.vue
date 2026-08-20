@@ -17,6 +17,7 @@ const go = (view: AppView) => navigateTo(view)
       <button class="nav-item nav-favorites" :class="{ active: activeView === 'favorites' }" title="收藏" @click="go('favorites')"><AppIcon name="heart"/><span class="nav-label">收藏</span></button>
       <button class="nav-item nav-playlists" :class="{ active: activeView === 'playlists' }" title="歌单" @click="go('playlists')"><AppIcon name="playlist"/><span class="nav-label">歌单</span></button>
       <button class="nav-item nav-recent" :class="{ active: activeView === 'recent' }" title="最近播放" @click="go('recent')"><AppIcon name="history"/><span class="nav-label">最近播放</span></button>
+      <button class="nav-item nav-downloads" :class="{ active: activeView === 'downloads' }" title="下载管理" @click="go('downloads')"><AppIcon name="download"/><span class="nav-label">下载管理</span></button>
       <p class="nav-title">系统</p>
       <button class="nav-item nav-settings" title="设置" @click="openSourceSettings"><AppIcon name="settings"/><span class="nav-label">设置</span></button>
     </nav>
