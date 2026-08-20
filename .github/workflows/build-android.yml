@@ -3,8 +3,15 @@ name: Build Android app
 on:
   workflow_dispatch:
   push:
+    branches:
+      - master
     tags:
       - "v*"
+    paths:
+      - ".github/workflows/build-android.yml"
+      - "rubia-music-app/package.json"
+      - "rubia-music-app/package-lock.json"
+      - "rubia-music-app/src-tauri/**"
 
 permissions:
   contents: write
