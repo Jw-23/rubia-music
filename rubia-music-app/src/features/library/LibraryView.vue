@@ -2,14 +2,25 @@
 import { computed, ref, watch } from 'vue'
 import TrackList from '../../components/music/TrackList.vue'
 import { useLibrary } from './libraryStore'
+import AppIcon from '../../components/AppIcon.vue'
+import { useMusicCache } from '../cache/musicCache'
 
 const props = defineProps<{ mode: 'favorites' | 'playlists' | 'recent' }>()
 const library = useLibrary()
 const selectedId = ref('default')
+const playlistQuery = ref('')
+const downloadStatus = ref('')
+const downloadingPlaylist = ref(false)
+const cache = useMusicCache()
 const editorMode = ref<'create' | 'rename' | null>(null)
 const draftName = ref('')
 const editorError = ref('')
 const selectedPlaylist = computed(() => library.playlists.value.find(item => item.id === selectedId.value) ?? library.playlists.value[0])
+const filteredPlaylistTracks = computed(() => {
+  const query = playlistQuery.value.trim().toLocaleLowerCase()
+  if (!query) return selectedPlaylist.value?.tracks ?? []
+  return (selectedPlaylist.value?.tracks ?? []).filter(track => [track.name, track.artist, track.album].some(value => value?.toLocaleLowerCase().includes(query)))
+})
 const config = computed(() => props.mode === 'favorites'
   ? { eyebrow: '资料库', title: '收藏歌曲', empty: '还没有收藏歌曲', tracks: library.favorites.value }
   : { eyebrow: '播放记录', title: '最近播放', empty: '还没有播放记录', tracks: library.recent.value })
@@ -29,20 +40,32 @@ const removeSelected = () => {
   if (!playlist || playlist.id === 'default' || !confirm(`确定删除歌单「${playlist.name}」吗？歌单内的歌曲不会从收藏中删除。`)) return
   library.deletePlaylist(playlist.id); selectedId.value = 'default'
 }
+const downloadPlaylist = async () => {
+  const tracks = selectedPlaylist.value?.tracks ?? []
+  if (!tracks.length || downloadingPlaylist.value) return
+  downloadingPlaylist.value = true; downloadStatus.value = '正在准备下载…'
+  try {
+    const result = await cache.downloadTracks(tracks, (done, total) => { downloadStatus.value = total ? `正在下载 ${done} / ${total}` : '歌单歌曲均已缓存' })
+    downloadStatus.value = result.failed ? `已下载 ${result.downloaded} 首，${result.failed} 首失败` : result.downloaded ? `已完成 ${result.downloaded} 首歌曲下载` : '歌单歌曲均已缓存'
+  } catch (error) { downloadStatus.value = `下载中断：${error instanceof Error ? error.message : String(error)}` }
+  finally { downloadingPlaylist.value = false }
+}
 </script>
 
 <template>
   <section v-if="mode === 'playlists'" class="library-view playlist-view">
-    <header class="library-heading playlist-heading"><div><p>我的音乐</p><h1>歌单</h1></div><button class="create-playlist" @click="openEditor('create')"><span>＋</span>新建歌单</button></header>
+    <header class="library-heading playlist-heading"><div><p>我的音乐</p><h1>歌单</h1></div><button class="create-playlist" @click="openEditor('create')"><AppIcon name="plus" :size="17"/>新建歌单</button></header>
     <form v-if="editorMode" class="playlist-editor" @submit.prevent="saveEditor"><div><strong>{{ editorMode === 'create' ? '创建新歌单' : '重命名歌单' }}</strong><small v-if="editorError">{{ editorError }}</small></div><input v-model="draftName" maxlength="30" autofocus placeholder="歌单名称"/><button type="button" @click="closeEditor">取消</button><button class="primary" type="submit">保存</button></form>
-    <div class="playlist-switcher" aria-label="选择歌单"><button v-for="playlist in library.playlists.value" :key="playlist.id" :class="{ active: selectedPlaylist?.id === playlist.id }" @click="selectedId=playlist.id"><span>♫</span><strong>{{ playlist.name }}</strong><small>{{ playlist.tracks.length }} 首</small></button></div>
-    <header v-if="selectedPlaylist" class="playlist-detail"><div><p>当前歌单</p><h2>{{ selectedPlaylist.name }}</h2><small>{{ selectedPlaylist.tracks.length }} 首歌曲</small></div><div v-if="selectedPlaylist.id !== 'default'"><button @click="openEditor('rename')">重命名</button><button class="danger" @click="removeSelected">删除</button></div></header>
-    <TrackList v-if="selectedPlaylist?.tracks.length" :tracks="selectedPlaylist.tracks" removable :playlist-id="selectedPlaylist.id"/>
-    <div v-else class="library-empty"><span>♫</span><p>这个歌单还是空的</p><small>在搜索结果中点击“＋”，然后选择此歌单</small></div>
+    <div class="playlist-switcher" aria-label="选择歌单"><button v-for="playlist in library.playlists.value" :key="playlist.id" :class="{ active: selectedPlaylist?.id === playlist.id }" @click="selectedId=playlist.id"><span><AppIcon name="music"/></span><strong>{{ playlist.name }}</strong><small>{{ playlist.tracks.length }} 首</small></button></div>
+    <header v-if="selectedPlaylist" class="playlist-detail"><div><p>当前歌单</p><h2>{{ selectedPlaylist.name }}</h2><small>{{ selectedPlaylist.tracks.length }} 首歌曲</small></div><div><button :disabled="!selectedPlaylist.tracks.length || downloadingPlaylist" @click="downloadPlaylist"><AppIcon name="download" :size="15"/>{{ downloadingPlaylist ? '下载中' : '全部下载' }}</button><template v-if="selectedPlaylist.id !== 'default'"><button @click="openEditor('rename')">重命名</button><button class="danger" @click="removeSelected">删除</button></template></div></header>
+    <div v-if="selectedPlaylist?.tracks.length" class="playlist-tools"><label><AppIcon name="search" :size="16"/><input v-model="playlistQuery" placeholder="搜索当前歌单"/></label><span>{{ downloadStatus || (playlistQuery ? `${filteredPlaylistTracks.length} 条结果` : `${selectedPlaylist.tracks.filter(cache.isCached).length} 首可离线播放`) }}</span></div>
+    <TrackList v-if="filteredPlaylistTracks.length" :tracks="filteredPlaylistTracks" removable :playlist-id="selectedPlaylist.id"/>
+    <div v-else-if="selectedPlaylist?.tracks.length" class="library-empty compact"><AppIcon name="search" :size="28"/><p>没有匹配的歌曲</p><small>尝试搜索歌曲、歌手或专辑</small></div>
+    <div v-else class="library-empty"><span><AppIcon name="music" :size="32"/></span><p>这个歌单还是空的</p><small>在搜索结果中点击添加按钮，然后选择此歌单</small></div>
   </section>
   <section v-else class="library-view">
     <header class="library-heading"><p>{{ config.eyebrow }}</p><h1>{{ config.title }}</h1><span>{{ config.tracks.length }} 首歌曲</span></header>
     <TrackList v-if="config.tracks.length" :tracks="config.tracks"/>
-    <div v-else class="library-empty"><span>♫</span><p>{{ config.empty }}</p><small>可在搜索结果中使用收藏或添加按钮</small></div>
+    <div v-else class="library-empty"><span><AppIcon name="music" :size="32"/></span><p>{{ config.empty }}</p><small>可在搜索结果中使用收藏或添加按钮</small></div>
   </section>
 </template>

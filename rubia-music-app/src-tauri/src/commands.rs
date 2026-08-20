@@ -136,3 +136,44 @@ pub async fn save_source_settings(
         .await
         .map_err(|e| e.to_string())
 }
+
+fn cache_file_name(track_key: &str) -> String {
+    let safe: String = track_key
+        .chars()
+        .map(|character| if character.is_ascii_alphanumeric() || matches!(character, '-' | '_') { character } else { '_' })
+        .take(160)
+        .collect();
+    format!("{safe}.audio")
+}
+
+fn cache_path(app: &AppHandle, track_key: &str) -> Result<std::path::PathBuf, String> {
+    Ok(app.path().app_data_dir().map_err(|e| e.to_string())?.join("music-cache").join(cache_file_name(track_key)))
+}
+
+#[derive(serde::Serialize)]
+pub struct CachedTrack {
+    path: String,
+    bytes: usize,
+}
+
+#[tauri::command]
+pub async fn cache_track(app: AppHandle, url: String, track_key: String, quality: String) -> Result<CachedTrack, String> {
+    let parsed = reqwest::Url::parse(&url).map_err(|_| "歌曲下载地址无效".to_string())?;
+    if !matches!(parsed.scheme(), "http" | "https") { return Err("仅支持 HTTP 或 HTTPS 下载地址".into()); }
+    let path = cache_path(&app, &track_key)?;
+    if let Some(parent) = path.parent() { tokio::fs::create_dir_all(parent).await.map_err(|e| e.to_string())?; }
+    let response = Client::builder().timeout(Duration::from_secs(180)).build().map_err(|e| e.to_string())?
+        .get(parsed).send().await.map_err(|e| format!("下载失败：{e}"))?.error_for_status().map_err(|e| format!("下载失败：{e}"))?;
+    let content = response.bytes().await.map_err(|e| format!("读取歌曲数据失败：{e}"))?;
+    if content.is_empty() { return Err("下载结果为空".into()); }
+    let temporary = path.with_extension(format!("{quality}.download"));
+    tokio::fs::write(&temporary, &content).await.map_err(|e| format!("保存歌曲失败：{e}"))?;
+    tokio::fs::rename(&temporary, &path).await.map_err(|e| format!("保存歌曲失败：{e}"))?;
+    Ok(CachedTrack { path: path.to_string_lossy().into_owned(), bytes: content.len() })
+}
+
+#[tauri::command]
+pub async fn cached_track_path(app: AppHandle, track_key: String) -> Result<Option<String>, String> {
+    let path = cache_path(&app, &track_key)?;
+    Ok(if tokio::fs::try_exists(&path).await.map_err(|e| e.to_string())? { Some(path.to_string_lossy().into_owned()) } else { None })
+}

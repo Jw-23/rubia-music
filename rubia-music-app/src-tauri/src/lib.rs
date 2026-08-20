@@ -45,6 +45,8 @@ pub fn run() {
             commands::source_http_request,
             commands::load_source_settings,
             commands::save_source_settings,
+            commands::cache_track,
+            commands::cached_track_path,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

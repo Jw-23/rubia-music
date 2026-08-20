@@ -6,6 +6,7 @@ import { sourceDebug, sourceDebugError } from '../sources/sourceDebug'
 import { selectSourceQualities, selectTrackQuality } from './qualityPreference'
 import { useLibrary } from '../library/libraryStore'
 import { appSettings } from '../settings/appSettings'
+import { cachedPlaybackUrl } from '../cache/musicCache'
 
 const audio = new Audio()
 const state = reactive({ current: null as MusicTrack | null, queue: [] as MusicTrack[], playing: false, loading: false, currentTime: 0, duration: 0, volume: appSettings.volume, error: '' })
@@ -46,6 +47,14 @@ async function play(track: MusicTrack, queue?: MusicTrack[]) {
   const quality = sourceQualities[0] ?? selectTrackQuality(track)
   sourceDebug('player:quality', { trackQualities: track.qualities, sourceQualities: runtime.capabilities.value?.sources?.[track.source]?.qualitys, candidates: sourceQualities, selected: quality })
   try {
+    const cachedUrl = await cachedPlaybackUrl(track)
+    if (playId !== playSequence) return
+    if (cachedUrl) {
+      sourceDebug('player:cached-load', { track: { id: track.id, source: track.source, name: track.name }, url: cachedUrl })
+      resetAudioSource(); audio.src = cachedUrl; await audio.play(); useLibrary().recordRecent(track)
+      state.error = ''
+      return
+    }
     if (hasCustomSource && runtime.status.value !== 'ready') {
       const detail = runtime.error.value || (runtime.status.value === 'loading' ? '音源仍在初始化' : '音源未完成初始化')
       throw new Error(`自定义源「${runtime.sourceName.value}」不可用：${detail}`)
