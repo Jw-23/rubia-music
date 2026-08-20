@@ -10,6 +10,7 @@ import { useSourceRuntime } from './features/sources/useSourceRuntime'
 import HomeView from './features/home/HomeView.vue'
 import LibraryView from './features/library/LibraryView.vue'
 import DownloadsView from './features/cache/DownloadsView.vue'
+import AppToast from './components/AppToast.vue'
 import { activeView, navigateTo, type AppView } from './features/navigation/navigationState'
 import { sourceSettingsOpen } from './features/sources/settingsState'
 import { usePlayer } from './features/player/playerStore'
@@ -36,5 +37,6 @@ onBeforeUnmount(() => unlistenMenu?.())
     <main class="content"><SearchView v-if="activeView === 'search'"/><HomeView v-else-if="activeView === 'home'"/><DownloadsView v-else-if="activeView === 'downloads'"/><LibraryView v-else :mode="activeView"/></main>
     <PlayerBar />
     <SourcePanel />
+    <AppToast />
   </div>
 </template>

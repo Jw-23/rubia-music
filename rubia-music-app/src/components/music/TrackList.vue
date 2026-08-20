@@ -5,13 +5,14 @@ import { usePlayer } from '../../features/player/playerStore'
 import { useLibrary } from '../../features/library/libraryStore'
 import AppIcon from '../AppIcon.vue'
 import { useMusicCache } from '../../features/cache/musicCache'
+import { showToast } from '../../features/notifications/toastState'
 
 const props = withDefaults(defineProps<{ tracks: MusicTrack[]; removable?: boolean; playlistId?: string }>(), { removable: false, playlistId: 'default' })
 const player = usePlayer(); const library = useLibrary()
 const cache = useMusicCache()
 const duration = (seconds: number) => `${Math.floor(seconds / 60)}:${Math.floor(seconds % 60).toString().padStart(2, '0')}`
-const addTo = (track: MusicTrack, playlistId: string, event: MouseEvent) => { library.addToPlaylist(track, playlistId); (event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open') }
-const download = async (track: MusicTrack) => { try { await cache.downloadTrack(track) } catch (error) { alert(`下载失败：${error instanceof Error ? error.message : String(error)}`) } }
+const addTo = (track: MusicTrack, playlistId: string, event: MouseEvent) => { const playlist = library.playlists.value.find(item => item.id === playlistId); library.addToPlaylist(track, playlistId); showToast(`已添加到「${playlist?.name || '歌单'}」`); (event.currentTarget as HTMLElement).closest('details')?.removeAttribute('open') }
+const download = async (track: MusicTrack) => { showToast(`「${track.name}」已添加到下载列表`); try { await cache.downloadTrack(track) } catch (error) { alert(`下载失败：${error instanceof Error ? error.message : String(error)}`) } }
 </script>
 <template>
   <div class="track-table">
