@@ -218,9 +218,7 @@ jobs:
           title="Rubia Music $tag"
           notes="Android APK and AAB for $tag."
 
-          if gh release view "$tag" > /dev/null 2>&1; then
-            gh release edit "$tag" --title "$title" --notes "$notes"
-          else
+          if ! gh release view "$tag" > /dev/null 2>&1; then
             gh release create "$tag" --verify-tag --title "$title" --notes "$notes"
           fi
 
