@@ -17,6 +17,7 @@ const player = usePlayer()
 let unlistenMenu: UnlistenFn | undefined
 
 onMounted(async () => {
+  void player.restoreSession()
   unlistenMenu = await listen<string>('rubia://menu', ({ payload }) => {
     const views: Record<string, AppView> = { 'view-home': 'home', 'view-search': 'search', 'view-favorites': 'favorites', 'view-playlists': 'playlists', 'view-recent': 'recent' }
     if (payload === 'settings') sourceSettingsOpen.value = true

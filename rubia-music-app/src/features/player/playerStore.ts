@@ -8,11 +8,27 @@ import { useLibrary } from '../library/libraryStore'
 import { appSettings } from '../settings/appSettings'
 import { cachedPlaybackUrl } from '../cache/musicCache'
 
+interface PlayerSession { current: MusicTrack | null; queue: MusicTrack[]; currentTime: number; playing: boolean }
+const sessionKey = 'rubia.music.player-session.v1'
+const savedSession: PlayerSession = (() => {
+  try {
+    const value = JSON.parse(localStorage.getItem(sessionKey) || '{}') as Partial<PlayerSession>
+    return { current: value.current || null, queue: Array.isArray(value.queue) ? value.queue : [], currentTime: Number(value.currentTime) || 0, playing: Boolean(value.playing) }
+  } catch { return { current: null, queue: [], currentTime: 0, playing: false } }
+})()
 const audio = new Audio()
-const state = reactive({ current: null as MusicTrack | null, queue: [] as MusicTrack[], playing: false, loading: false, currentTime: 0, duration: 0, volume: appSettings.volume, error: '' })
+const state = reactive({ current: savedSession.current, queue: savedSession.queue, playing: false, loading: false, currentTime: savedSession.currentTime, duration: savedSession.current?.durationSeconds || 0, volume: appSettings.volume, error: '' })
 let customLoadInProgress = false
 let fallbackInProgress = false
 let playSequence = 0
+let restored = false
+let lastSessionWrite = 0
+const persistSession = (force = false) => {
+  const now = Date.now()
+  if (!force && now - lastSessionWrite < 1500) return
+  lastSessionWrite = now
+  localStorage.setItem(sessionKey, JSON.stringify({ current: state.current, queue: state.queue, currentTime: state.currentTime, playing: state.playing } satisfies PlayerSession))
+}
 const isPreviewDuration = (track: MusicTrack) => Number.isFinite(audio.duration) && audio.duration > 0 && track.durationSeconds >= 60 && audio.duration < Math.min(30, track.durationSeconds * 0.5)
 const normalizePlaybackUrl = (value: string) => {
   try {
@@ -26,10 +42,10 @@ const normalizePlaybackUrl = (value: string) => {
 const resetAudioSource = () => { audio.pause(); audio.removeAttribute('src'); audio.load() }
 audio.volume = state.volume
 watch(() => appSettings.volume, value => { state.volume = value; audio.volume = value })
-audio.addEventListener('timeupdate', () => { state.currentTime = audio.currentTime })
+audio.addEventListener('timeupdate', () => { state.currentTime = audio.currentTime; persistSession() })
 audio.addEventListener('durationchange', () => { state.duration = Number.isFinite(audio.duration) ? audio.duration : 0 })
-audio.addEventListener('play', () => { state.playing = true })
-audio.addEventListener('pause', () => { state.playing = false })
+audio.addEventListener('play', () => { state.playing = true; persistSession(true) })
+audio.addEventListener('pause', () => { state.playing = false; persistSession(true) })
 audio.addEventListener('ended', () => void playNext())
 audio.addEventListener('error', () => {
   const mediaError = audio.error
@@ -112,4 +128,22 @@ async function toggle() { if (!state.current) return; if (audio.paused) await au
 async function playNext() { if (!state.current) return; const index = state.queue.findIndex(t => t.id === state.current?.id && t.source === state.current?.source); const next = state.queue[index + 1]; if (next) await play(next) }
 function seek(seconds: number) { audio.currentTime = seconds }
 function setVolume(value: number) { state.volume = value; audio.volume = value; appSettings.volume = value }
-export function usePlayer() { return { state, progress: computed(() => state.duration ? state.currentTime / state.duration : 0), play, toggle, playNext, seek, setVolume } }
+async function restoreSession() {
+  if (restored || !savedSession.current) return
+  restored = true
+  const runtime = useSourceRuntime()
+  for (let attempt = 0; attempt < 100 && (!runtime.initialized.value || runtime.status.value === 'loading'); attempt++) await new Promise(resolve => setTimeout(resolve, 100))
+  const shouldPlay = savedSession.playing
+  audio.muted = !shouldPlay
+  await play(savedSession.current, savedSession.queue.length ? savedSession.queue : [savedSession.current])
+  if (audio.src && savedSession.currentTime > 0) {
+    try { audio.currentTime = Math.min(savedSession.currentTime, Number.isFinite(audio.duration) ? Math.max(0, audio.duration - .25) : savedSession.currentTime); state.currentTime = audio.currentTime }
+    catch { /* metadata may not expose seeking on every platform yet */ }
+  }
+  if (!shouldPlay) audio.pause()
+  audio.muted = false
+  persistSession(true)
+}
+window.addEventListener('beforeunload', () => persistSession(true))
+watch(() => [state.current, state.queue] as const, () => persistSession(true), { deep: true })
+export function usePlayer() { return { state, progress: computed(() => state.duration ? state.currentTime / state.duration : 0), play, toggle, playNext, seek, setVolume, restoreSession } }
