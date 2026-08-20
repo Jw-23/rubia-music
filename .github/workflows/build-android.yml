@@ -50,8 +50,9 @@ jobs:
         shell: bash
         run: |
           NDK_VERSION=27.2.12479018
-          yes | sdkmanager --licenses > /dev/null
-          sdkmanager "ndk;$NDK_VERSION"
+          SDKMANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          yes | "$SDKMANAGER" --licenses > /dev/null
+          "$SDKMANAGER" "ndk;$NDK_VERSION"
           echo "NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
 
       - name: Install frontend dependencies
