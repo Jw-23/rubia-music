@@ -14,6 +14,8 @@ const error = ref('')
 const lineElements = ref<HTMLElement[]>([])
 const scrollContainer = ref<HTMLElement | null>(null)
 let scrollFrame = 0
+let lyricRequest = 0
+const lyricMemoryCache = new Map<string, LyricLine[]>()
 const activeIndex = computed(() => {
   let index = -1
   for (let i = 0; i < lines.value.length; i++) {
@@ -33,14 +35,40 @@ const lyricProgress = (index: number) => {
   return Math.min(100, Math.max(0, ((player.state.currentTime - start) / (end - start)) * 100))
 }
 
-watch(() => player.state.current, async track => {
-  lines.value = []; error.value = ''
+const wait = (milliseconds: number) => new Promise(resolve => setTimeout(resolve, milliseconds))
+const loadLyrics = async (retry = true) => {
+  const track = player.state.current
+  const request = ++lyricRequest
+  lines.value = []; error.value = ''; loading.value = false
   if (!track) return
+  const key = `${track.source}:${track.id}`
+  const cached = lyricMemoryCache.get(key)
+  if (cached?.length) { lines.value = cached; return }
   loading.value = true
-  try { lines.value = await getMusicLyrics(track) }
-  catch (cause) { error.value = String(cause) }
-  finally { loading.value = false }
-}, { immediate: true })
+  try {
+    let result: LyricLine[] = []
+    let failure: unknown
+    const attempts = retry ? 2 : 1
+    for (let attempt = 0; attempt < attempts; attempt++) {
+      try {
+        if (attempt) await wait(650)
+        result = await getMusicLyrics(track)
+        if (result.length) break
+        failure = new Error('暂未找到歌词')
+      } catch (cause) { failure = cause }
+    }
+    if (request !== lyricRequest) return
+    if (!result.length) throw failure || new Error('暂未找到歌词')
+    lyricMemoryCache.set(key, result)
+    lines.value = result
+  } catch (cause) {
+    if (request === lyricRequest) error.value = cause instanceof Error ? cause.message : String(cause)
+  } finally {
+    if (request === lyricRequest) loading.value = false
+  }
+}
+
+watch(() => player.state.current ? `${player.state.current.source}:${player.state.current.id}` : '', () => void loadLyrics(), { immediate: true })
 
 const animateToLine = (index: number) => {
   const container = scrollContainer.value; const line = lineElements.value[index]
@@ -81,7 +109,7 @@ const onKeydown = (event: KeyboardEvent) => {
 const emit = defineEmits<{ close: [] }>()
 const emitClose = () => emit('close')
 onMounted(() => window.addEventListener('keydown', onKeydown))
-onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancelAnimationFrame(scrollFrame) })
+onBeforeUnmount(() => { lyricRequest += 1; window.removeEventListener('keydown', onKeydown); cancelAnimationFrame(scrollFrame) })
 </script>
 
 <template>
@@ -96,7 +124,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancel
         </aside>
         <main ref="scrollContainer" class="lyrics-scroll" :style="{ '--lyric-size': `${appSettings.lyricFontSize}px` }">
           <div v-if="loading" class="lyrics-message">正在加载歌词…</div>
-          <div v-else-if="error" class="lyrics-message">{{ error }}</div>
+          <div v-else-if="error" class="lyrics-message"><span>{{ error }}</span><button @click="loadLyrics(false)">重新搜索</button></div>
           <button v-for="(line, index) in lines" :key="`${line.timeSeconds}-${index}`" :ref="element => setLineElement(element, index)" class="lyric-line" :class="{ active: index === activeIndex, played: index < activeIndex }" :style="{ '--lyric-progress': `${lyricProgress(index)}%` }" @click="jumpTo(line)"><span class="lyric-base">{{ line.text }}</span><span class="lyric-fill" aria-hidden="true">{{ line.text }}</span></button>
         </main>
       </div>
@@ -125,4 +153,7 @@ onBeforeUnmount(() => { window.removeEventListener('keydown', onKeydown); cancel
 .lyric-line.active .lyric-base { color: #ffffff52; }
 .lyric-line.active .lyric-fill { color: #ff5a79; text-shadow: none; }
 .lyrics-layout.no-artwork { grid-template-columns: minmax(0, 760px); justify-content: center; }
+.lyrics-message { display: flex; flex-direction: column; align-items: center; gap: 14px; }
+.lyrics-message button { padding: 8px 14px; border: 1px solid #ffffff20; border-radius: 999px; background: #ffffff12; color: #fff; font-size: 12px; cursor: pointer; }
+.lyrics-message button:hover { background: #ffffff20; }
 </style>
